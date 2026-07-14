@@ -58,3 +58,5 @@ generate_npdm(subsdk9 ${CMAKE_SOURCE_DIR}/user/subsdk9.json)
 make_nso_target(subsdk9)
 set(FTP_TITLE_ID 0100000000010000 CACHE STRING "FTP Title ID")
 deploy_nso_ftp(subsdk9 ${FTP_TITLE_ID})
+
+add_renamed_subsdk_targets(subsdk9 ${EMU_MOD_PATH})

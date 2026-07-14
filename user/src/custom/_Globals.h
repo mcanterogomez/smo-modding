@@ -265,10 +265,12 @@ bool isActionBusy() { return fireStep >= 0 || drillStep >= 0; }
 // Joints
 inline float glideLean = 0.0f;
 inline float glidePitch = 0.0f;
-inline float wheelFlipL = 0.0f;
-inline float wheelFlipR = 0.0f;
+inline float hoverBlend = 0.0f; // 0 = grounded, 1 = hover
+inline float wheelTilt = 0.0f;
+inline float wheelSpin = 0.0f;
 inline float propellerSpin = 0.0f;
 inline float propellerSpeed = 0.0f;
+inline float propellerOffset = 0.0f;
 inline sead::Vector3f propellerScale = {0.0f, 0.0f, 0.0f};
 
 // Constants

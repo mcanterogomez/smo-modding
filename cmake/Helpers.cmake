@@ -64,3 +64,15 @@ function(deploy_nso_ftp target title_id)
     else ()
     endif ()
 endfunction()
+
+function(add_renamed_subsdk_targets target dest_path)
+    foreach(n RANGE 1 20)
+        if (NOT "subsdk${n}" STREQUAL "${target}")
+            add_custom_target(subsdk${n}
+                DEPENDS ${target}_nso ${target}_npdm
+                COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/${target} ${dest_path}/subsdk${n}
+                COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/${target}.npdm ${dest_path}/main.npdm
+            )
+        endif()
+    endforeach()
+endfunction()

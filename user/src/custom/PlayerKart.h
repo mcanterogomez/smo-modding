@@ -1,11 +1,28 @@
 #pragma once
 #include "custom/_Globals.h"
 
-inline bool isKartSubmerged(Motorcycle* kart) {
+void isKartReset() {
+    isAntiGravity = false;
+    hoverBlend = 0.0f;
+    propellerSpeed = 0.0f;
+    al::hideMaterial(isKart, "GravityMT");
+}
+
+bool isKartSubmerged(Motorcycle* kart) {
     if (!al::isInWater(kart)) return false;
     sead::Vector3f surfacePos, surfaceNormal;
     return !al::calcFindWaterSurface(&surfacePos, &surfaceNormal, kart, al::getTrans(kart), sead::Vector3f::ey, 75.0f);
 }
+
+// Vanilla only applies the world border to the player, so give the kart its own
+class WorldEndBorderKeeper : public al::NerveExecutor {
+public:
+	WorldEndBorderKeeper(const al::LiveActor*);
+	void update(const sead::Vector3f& trans, const sead::Vector3f& velocity, bool isAirborne);
+
+	char gap[0x54 - 0x10];
+	sead::Vector3f mPullBack;	// 0x54
+};
 
 namespace PlayerKart {
 
@@ -14,7 +31,9 @@ namespace PlayerKart {
         if (al::isExistArchive("ObjectData/PlayerKart")) {
             isKart = new Motorcycle("Kart");
             al::initCreateActorNoPlacementInfo(isKart, *actorInfo);
+            kartBorder = new WorldEndBorderKeeper(isKart);
             isKart->makeActorDead();
+            isKartReset();
 
             // Wheel tilt (Z): one value, mirrored for the left side
             al::initJointLocalZRotator(isKart, &wheelTilt, "FrontTireR"); al::initJointLocalMinusZRotator(isKart, &wheelTilt, "FrontTireL");
@@ -36,10 +55,10 @@ namespace PlayerKart {
 
         // Handle kart spawning
         static int holdLeftFrames = 0;
-        if (al::isPadHoldLeft(-1)) holdLeftFrames++;
+        if (al::isPadHoldLeft(-1) && !thisPtr->mInput->isMove() && isActive) holdLeftFrames++;
         else holdLeftFrames = 0;
 
-        if (!isKart || !isActive || holdLeftFrames != 30 || thisPtr->mInput->isMove()) return;
+        if (!isKart || holdLeftFrames != 30) return;
 
         if (al::isAlive(isKart)) {
             if (rs::isPlayerBinding(thisPtr)) return;
@@ -50,55 +69,32 @@ namespace PlayerKart {
             return;
         }
 
+        const f32 maxStep = 500.0f;	// tallest ledge the kart will spawn on
+
         sead::Vector3f front;
         al::calcFrontDir(&front, thisPtr);
         sead::Vector3f gravity = al::getGravity(thisPtr);
-        sead::Vector3f marioPos = al::getTrans(thisPtr);
-        sead::Vector3f target = marioPos + front * 500.0f;
+        sead::Vector3f rayStart = al::getTrans(thisPtr) - gravity * maxStep;
 
-        sead::Vector3f groundPos;
-        if (!alCollisionUtil::getHitPosOnArrow(thisPtr, &groundPos, target - gravity * 1000.0f, gravity * 2000.0f, nullptr, nullptr)) {
+        // Refuse if something blocks the way, or if there is no ground to land on
+        sead::Vector3f hitPos, groundNormal;
+        if (alCollisionUtil::getHitPosOnArrow(thisPtr, &hitPos, rayStart, front * 500.0f, nullptr, nullptr)
+            || !alCollisionUtil::getHitPosAndNormalOnArrow(thisPtr, &hitPos, &groundNormal, rayStart + front * 500.0f, gravity * (maxStep + 1000.0f), nullptr, nullptr)) {
             al::tryStartSe(thisPtr, "InvalidCapAction");
             return;
         }
-        target = groundPos - gravity;
 
-        al::setTrans(isKart, target);
+        sead::Quatf quat;
+        al::makeQuatUpFront(&quat, groundNormal, front);
+
+        al::setTrans(isKart, hitPos - gravity);
+        al::updatePoseQuat(isKart, quat);
         isKart->appear();
+        isKartReset();
+
         al::tryEmitEffect(isKart, "Appear", nullptr);
         al::tryStartSe(isKart, "Appear");
     }
-
-    // Swap motorcycle anim to kart
-    struct FindAnimInfoHook : public mallow::hook::Trampoline<FindAnimInfoHook> {
-        static void* Callback(void* table, const char* name) {
-            if (!al::isEqualSubString(name, "Motorcycle") 
-                || !isKart || !isHakoniwa || !isHakoniwa->mBindKeeper->mBindSensor
-                || al::getSensorHost(isHakoniwa->mBindKeeper->mBindSensor) != (al::LiveActor*)isKart) return Orig(table, name);
-
-            sead::FixedSafeString<64> kart;
-            kart.format("Kart%s", name + strlen("Motorcycle"));
-            if (void* result = Orig(table, kart.cstr())) return result;
-
-            return Orig(table, name);
-        }
-    };
-
-    struct CalcAnimHook : public mallow::hook::Trampoline<CalcAnimHook> {
-        static void Callback(al::LiveActor* actor) {
-            if (actor != (al::LiveActor*)isKart || !al::isAlive(actor)) { Orig(actor); return; }
-
-            auto* kart = static_cast<Motorcycle*>(actor);
-
-            // Dampen lean while tilted
-            float savedLean = kart->mLean;
-            kart->mLean *= wheelTilt / 90.0f;
-
-            Orig(actor);
-
-            kart->mLean = savedLean;
-        }
-    };
 
     struct InitActorSuffixHook : public mallow::hook::Trampoline<InitActorSuffixHook> {
         static void Callback(al::LiveActor* actor, const al::ActorInitInfo& info, const char* suffix) {
@@ -110,68 +106,112 @@ namespace PlayerKart {
         }
     };
 
-    struct MotorcycleMovementHook : public mallow::hook::Trampoline<MotorcycleMovementHook> {
+    // Swap motorcycle anim to kart
+    struct FindAnimInfoHook : public mallow::hook::Trampoline<FindAnimInfoHook> {
+        static void* Callback(void* table, const char* name) {
+            if (!name) return Orig(table, name);
+
+            // Mario riding: Motorcycle* -> Kart*
+            if (table == getAnimTable(isHakoniwa)
+                && isHakoniwa->mBindKeeper->mBindSensor
+                && al::getSensorHost(isHakoniwa->mBindKeeper->mBindSensor) == (al::LiveActor*)isKart
+                && al::isEqualSubString(name, "Motorcycle")
+            ) {
+                sead::FixedSafeString<64> kart;
+                kart.format("Kart%s", name + strlen("Motorcycle"));
+                if (auto* result = Orig(table, kart.cstr())) return result;
+                return Orig(table, name);
+            }
+
+            // Kart actor: ground anims -> swim anims in anti-gravity
+            if (isAntiGravity && table == getAnimTable(isKart)
+            ) {
+                if (al::isEqualString(name, "Run") || al::isEqualString(name, "RunCollide")) {
+                    if (auto* result = Orig(table, "SwimRun")) return result;
+                }
+                else if (al::isEqualString(name, "Land")) {
+                    if (auto* result = Orig(table, "SwimLand")) return result;
+                }
+            }
+
+            return Orig(table, name);
+        }
+    };
+
+    struct MotorcycleCalcAnimHook : public mallow::hook::Trampoline<MotorcycleCalcAnimHook> {
         static void Callback(al::LiveActor* actor) {
             if (actor != (al::LiveActor*)isKart || !al::isAlive(actor)) { Orig(actor); return; }
 
             auto* kart = static_cast<Motorcycle*>(actor);
-            auto* collider = static_cast<IUsePlayerCollision*>(kart);
-            const char* actionName = al::getActionName(kart);
 
-            // Hover state: hazard ground forces it on, safe ground releases it
-            bool wasAntiGravity = isAntiGravity;
-            if (isKartSubmerged(kart) || rs::isCollisionCodeDamageFireGround(collider) || rs::isCollisionCodePoisonTouch(collider)) isAntiGravity = true;
-            else if (rs::isOnGround(kart, kart)) isAntiGravity = false;
+            // Lean: none on the ground, half while hovering, eased by hoverBlend between them
+            const float groundLean = 0.0f;
+            const float hoverLean = 0.75f;
 
-            if (isAntiGravity != wasAntiGravity) al::tryStartSe(kart, isAntiGravity ? "HoverStart" : "HoverFinish");
-
-            // World border: while ridden, feed the keeper the kart's data so it obeys the same edge walls Mario does
-            if (isHakoniwa) {
-                char* keeper = reinterpret_cast<char*>(isHakoniwa->mInfo->mWorldEndBorderKeeper);
-                *reinterpret_cast<sead::Vector3f*>(keeper + 0x18) = al::getTrans(kart);
-                *reinterpret_cast<sead::Vector3f*>(keeper + 0x24) = al::getVelocity(kart);
-                *reinterpret_cast<bool*>(keeper + 0x30) = !rs::isCollidedGround(collider);
-                reinterpret_cast<al::NerveExecutor*>(keeper)->updateNerve();
-
-                *al::getTransPtr(kart) += *reinterpret_cast<sead::Vector3f*>(keeper + 0x54);
-            }
-
-            // Hover blend: single eased driver for tilt, propeller scale, and offset
-            hoverBlend = al::lerpValue(hoverBlend, isAntiGravity ? 1.0f : 0.0f, 0.05f);
-            wheelTilt = hoverBlend * 90.0f;
-            propellerScale = {hoverBlend, hoverBlend, hoverBlend};
-            propellerOffset = 25.0f * (1.0f - hoverBlend);
-
-            // Tire light: on while hovering, off otherwise
-            if (al::isExistMaterial(kart, "GravityMT")) {
-                if (isAntiGravity) al::showMaterial(kart, "GravityMT");
-                else al::hideMaterial(kart, "GravityMT");
-            }
-
-            // Wheels: continuous axle spin while hovering
-            wheelSpin += hoverBlend;
-
-            // Propeller: spins during run/land, eases in/out, effect follows the spin
-            float targetSpeed = (al::isEqualSubString(actionName, "Run") || al::isEqualSubString(actionName, "Land")) ? 20.0f : 0.0f;
-            propellerSpeed = al::lerpValue(propellerSpeed, targetSpeed, 0.1f);
-            propellerSpin += propellerSpeed;
-
-            bool isSpinning = isAntiGravity && propellerSpeed > 5.0f;
-            if (isSpinning != al::isEffectEmitting(kart, "PropellerSpin")) {
-                if (isSpinning) al::tryEmitEffect(kart, "PropellerSpin", nullptr);
-                else al::tryDeleteEffect(kart, "PropellerSpin");
-            }
-
-            // Anim: while hovering, land/run should look like swimming instead
-            if (isAntiGravity && !al::isEqualSubString(actionName, "Swim")) {
-                if (al::isEqualSubString(actionName, "Land")) al::tryStartAction(kart, "SwimLand");
-                else if (al::isEqualSubString(actionName, "Run")) al::tryStartAction(kart, "SwimRun");
-            }
+            float savedLean = kart->mLean;
+            kart->mLean *= al::lerpValue(groundLean, hoverLean, hoverBlend);
 
             Orig(actor);
+
+            kart->mLean = savedLean;
         }
     };
 
+    struct MotorcycleMovementHook : public mallow::hook::Trampoline<MotorcycleMovementHook> {
+		static void Callback(al::LiveActor* actor) {
+			if (actor != (al::LiveActor*)isKart || !al::isAlive(actor)) { Orig(actor); return; }
+
+			auto* kart = static_cast<Motorcycle*>(actor);
+			auto* collider = static_cast<IUsePlayerCollision*>(kart);
+			const char* actionName = al::getActionName(kart);
+			bool isSubmerged = isKartSubmerged(kart);
+
+			// Hover state: hazard ground forces it on, safe ground releases it
+			bool wasAntiGravity = isAntiGravity;
+			if (isSubmerged || rs::isCollisionCodeDamageFireGround(collider) || rs::isCollisionCodePoisonTouch(collider) || isHakoniwa->mInfo->mIsMoon) isAntiGravity = true;
+			else if (rs::isOnGround(kart, kart)) isAntiGravity = false;
+
+			// Hover edge: sound, tire light, and re-run the anim lookup so the swap lands this frame
+			if (isAntiGravity != wasAntiGravity) {
+				al::tryStartSe(kart, isAntiGravity ? "HoverStart" : "HoverFinish");
+				al::startAction(kart, actionName);
+                if (isAntiGravity) { al::tryEmitEffect(kart, "HoverOn", nullptr); al::showMaterial(kart, "GravityMT"); }
+                else al::hideMaterial(kart, "GravityMT");
+            }
+
+			// Hover drives: tilt and wheels follow the hover state
+			hoverBlend = al::lerpValue(hoverBlend, isAntiGravity ? 1.0f : 0.0f, 0.05f);
+			wheelTilt = hoverBlend * 90.0f;
+			wheelSpin += hoverBlend;
+
+			// Propeller: deploys underwater only, spins during run/land
+			float blend = al::lerpValue(propellerScale.x, isSubmerged ? 1.0f : 0.0f, 0.05f);
+			propellerScale = {blend, blend, blend};
+			propellerOffset = 25.0f * (1.0f - blend);
+
+			float targetSpeed = isSubmerged && (al::isEqualSubString(actionName, "Run") || al::isEqualSubString(actionName, "Land")) ? 20.0f : 0.0f;
+			propellerSpeed = al::lerpValue(propellerSpeed, targetSpeed, 0.1f);
+			propellerSpin += propellerSpeed;
+
+            bool isDashing = propellerSpeed > 5.0f;
+            if (isDashing) { al::tryEmitEffect(kart, "PropellerSwim", nullptr); al::tryEmitEffect(kart, "PropellerSpin", nullptr); }
+            else { al::tryDeleteEffect(kart, "PropellerSwim"); al::tryDeleteEffect(kart, "PropellerSpin"); }
+
+			// Submerged: ground dust/idle effects would look wrong underwater
+			if (isSubmerged) {
+				al::tryDeleteEffect(kart, "IdolingL"); al::tryDeleteEffect(kart, "IdolingR");
+				al::tryDeleteEffect(kart, "MotorcycleDriveL"); al::tryDeleteEffect(kart, "MotorcycleDriveR");
+			}
+
+			// World border: same edge walls Mario obeys
+			kartBorder->update(al::getTrans(kart), al::getVelocity(kart), !rs::isCollidedGround(collider));
+			*al::getTransPtr(kart) += kartBorder->mPullBack;
+
+            Orig(actor);
+		}
+	};
+
+    // Forces al::isInWater false for the kart, at the two sites vanilla checks it while riding
     template <uintptr_t Offset>
     struct ForceOutOfWaterInline : public mallow::hook::Inline<ForceOutOfWaterInline<Offset>> {
         static void Callback(exl::hook::InlineCtx* ctx) {
@@ -180,13 +220,47 @@ namespace PlayerKart {
         }
     };
 
+    // Moon: hijacks vanilla's own isInWater branch to pick its softer fall gravity (exeRideRunFall/Wheelie share one helper, exeRideRunJump has its own)
+    template <uintptr_t Offset>
+    struct MoonGravityInline : public mallow::hook::Inline<MoonGravityInline<Offset>> {
+        static void Callback(exl::hook::InlineCtx* ctx) {
+            if (reinterpret_cast<void*>(ctx->X[19]) != isKart) return;
+            if (!isHakoniwa->mInfo->mIsMoon) return;
+            ctx->X[0] = 1; // force al::isInWater's return to true, kart only
+        }
+    };
+
+    // Moon/water: halves every al::addVelocityY call for the kart (exeRideWaitJump, exeRideRunClash, exeFall, exeJump)
+    struct AddVelocityYHook : public mallow::hook::Trampoline<AddVelocityYHook> {
+        static void Callback(al::LiveActor* actor, float v) {
+            if (actor == (al::LiveActor*)isKart && (isHakoniwa->mInfo->mIsMoon || isKartSubmerged(static_cast<Motorcycle*>(actor)))) v *= 0.5f;
+            Orig(actor, v);
+        }
+    };
+
+    // Kill on reset so the spawn toggle's isAlive() check works
+    struct MotorcycleResetHook : public mallow::hook::Trampoline<MotorcycleResetHook> {
+        static void Callback(Motorcycle* thisPtr) {
+            bool isReset = thisPtr == isKart && al::isGreaterEqualStep(thisPtr, 60);
+            Orig(thisPtr);
+            if (isReset) thisPtr->kill();
+        }
+    };
+
     inline void Install() {
         InitActorSuffixHook::InstallAtSymbol("_ZN2al15initActorSuffixEPNS_9LiveActorERKNS_13ActorInitInfoEPKc");
-        MotorcycleMovementHook::InstallAtSymbol("_ZN10Motorcycle8movementEv");
-        CalcAnimHook::InstallAtSymbol("_ZN2al9LiveActor8calcAnimEv");
         FindAnimInfoHook::InstallAtSymbol("_ZNK2al13AnimInfoTable12findAnimInfoEPKc");
+
+        MotorcycleCalcAnimHook::InstallAtSymbol("_ZN10Motorcycle8calcAnimEv");
+        MotorcycleMovementHook::InstallAtSymbol("_ZN10Motorcycle8movementEv");
+
         ForceOutOfWaterInline<0x2C92D0>::InstallAtOffset(0x2C92D0); // Motorcycle::movement, while riding
         ForceOutOfWaterInline<0x2CA110>::InstallAtOffset(0x2CA110); // sub_71002CA0E0, on dismount/fall
+        MoonGravityInline<0x2CD100>::InstallAtOffset(0x2CD100); // Motorcycle::exeRideRunFall/Wheelie, gravity select
+        MoonGravityInline<0x2CE128>::InstallAtOffset(0x2CE128); // Motorcycle::exeRideRunJump, gravity select
+
+        AddVelocityYHook::InstallAtSymbol("_ZN2al12addVelocityYEPNS_9LiveActorEf");
+        MotorcycleResetHook::InstallAtSymbol("_ZN10Motorcycle8exeResetEv");
 
         exl::patch::CodePatcher motorcycleJointCapPatcher(0x2C72A4); // Motorcycle's joint keeper bumped 6 to 20 to fit tilt + spin rotators
         //motorcycleJointCapPatcher.WriteInst(0x52800181); // MOV W1, #12

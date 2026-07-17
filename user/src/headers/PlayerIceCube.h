@@ -142,13 +142,19 @@ private:
 
         sead::Vector3f pos = al::getTrans(mTarget);
         sead::Vector3f gravity = al::getGravity(mTarget);
+        sead::Vector3f front;
+        al::calcFrontDir(&front, mTarget);
 
         sead::Vector3f rayStart = pos - gravity;
         sead::Vector3f rayDelta = gravity * kGroundRayLength;
-        sead::Vector3f groundPos;
+        sead::Vector3f groundPos, groundNormal;
 
-        if (alCollisionUtil::getHitPosOnArrow(mTarget, &groundPos, rayStart, rayDelta, nullptr, nullptr)) {
+        if (alCollisionUtil::getHitPosAndNormalOnArrow(mTarget, &groundPos, &groundNormal, rayStart, rayDelta, nullptr, nullptr)) {
             if ((groundPos - pos).dot(gravity) < mHalfHeight) pos = groundPos - (gravity * mHalfHeight);
+
+            sead::Quatf quat;
+            al::makeQuatUpFront(&quat, groundNormal, front);
+            al::updatePoseQuat(this, quat);
         } else
             pos = pos - (gravity * mHalfHeight);
 

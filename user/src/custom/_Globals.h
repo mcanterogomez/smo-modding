@@ -24,6 +24,7 @@
 #include "Library/HitSensor/HitSensorKeeper.h"
 #include "Library/Joint/JointControllerKeeper.h"
 #include "Library/LiveActor/ActorActionFunction.h"
+#include "Library/LiveActor/ActorAnimFunction.h"
 #include "Library/LiveActor/ActorCollisionFunction.h"
 #include "Library/LiveActor/ActorClippingFunction.h"
 #include "Library/LiveActor/ActorFlagFunction.h"
@@ -96,20 +97,20 @@
 
 // Namespaces
 namespace rs {
-    bool is2D(const IUseDimension*);
-    bool isEnableSendTrampleMsg(const al::LiveActor* player, al::HitSensor* source, al::HitSensor* target);
-    al::HitSensor* tryGetCollidedWallSensor(IUsePlayerCollision const* collider);
-    al::HitSensor* tryGetCollidedGroundSensor(IUsePlayerCollision const* collider);
+	bool is2D(const IUseDimension*);
+	bool isEnableSendTrampleMsg(const al::LiveActor* player, al::HitSensor* source, al::HitSensor* target);
+	al::HitSensor* tryGetCollidedWallSensor(IUsePlayerCollision const* collider);
+	al::HitSensor* tryGetCollidedGroundSensor(IUsePlayerCollision const* collider);
 }
 
 namespace PlayerEquipmentFunction {
-    bool isEquipmentNoCapThrow(const PlayerEquipmentUser*);
-    bool isEquipmentForceDash(const PlayerEquipmentUser*);
+	bool isEquipmentNoCapThrow(const PlayerEquipmentUser*);
+	bool isEquipmentForceDash(const PlayerEquipmentUser*);
 }
 
 class PlayerCarryKeeper {
 public:
-    bool isCarry() const;
+	bool isCarry() const;
 };
 
 using mallow::log::logLine;
@@ -120,30 +121,48 @@ using mallow::log::logLine;
 
 // Helper: nerve pointer from binary offset
 const al::Nerve* getNerveAt(uintptr_t offset) {
-    return (const al::Nerve*)((((u64)malloc) - 0x00724b94) + offset);
+	return (const al::Nerve*)((((u64)malloc) - 0x00724b94) + offset);
 }
 
 inline ModConfig* isConfig() { return mallow::config::getConfg<ModConfig>(); }
 
 // Spin button config
 bool isPadTriggerGalaxySpin(int port) {
-    switch (isConfig()->attackButton) {
-        case 'X': return al::isPadTriggerX(port);
-        default: return al::isPadTriggerY(port);
-    }
+	switch (isConfig()->attackButton) {
+		case 'X': return al::isPadTriggerX(port);
+		default: return al::isPadTriggerY(port);
+	}
 }
 
 // Galaxy SFX config
 inline void isGalaxySfx(PlayerActorHakoniwa* player) {
-    if (!isConfig()->galaxySfx) return;
-    auto* model = player->mModelHolder->findModelActor("Normal");
-    al::tryEmitEffect(model, "SpinAttack", nullptr);
-    al::tryStartSe(model, "SpinAttack");
+	if (!isConfig()->galaxySfx) return;
+	auto* model = player->mModelHolder->findModelActor("Normal");
+	al::tryEmitEffect(model, "SpinAttack", nullptr);
+	al::tryStartSe(model, "SpinAttack");
 }
 
 // =========================================================
 //                     TYPE CHECKS
 // =========================================================
+
+// Skeletal anim table of an actor's model, cached per actor so stale pointers compare but never deref
+template <typename T>
+inline const al::AnimInfoTable* getAnimTable(const T* actor) {
+	static const T* owner = nullptr;
+	static const al::AnimInfoTable* table = nullptr;
+
+	if (actor == owner) return table;	// stale pointers only ever compare, never deref
+	owner = actor;
+	table = nullptr;
+	if (!actor) return nullptr;
+
+	const al::LiveActor* model = actor;
+	if constexpr (requires { actor->mModelHolder; }) model = actor->mModelHolder->findModelActor("Normal");
+
+	if (auto* skl = model->getModelKeeper()->getAnimSkl()) table = skl->getAnimInfoTable();
+	return table;
+}
 
 template<typename... Models>
 inline bool isType(al::LiveActor* actor, const char* name, Models... models) {
@@ -235,6 +254,7 @@ inline HammerBrosHammer* isHammer = nullptr;
 inline HammerBrosHammer* isSmashHammer = nullptr;
 inline CustomGauge* isGauge = nullptr;
 inline Motorcycle* isKart = nullptr;
+inline WorldEndBorderKeeper* kartBorder = nullptr;
 inline al::LiveActor* isKoopa = nullptr;
 inline al::LiveActor* isNearTarget = nullptr; // nearest homing target this frame
 
@@ -294,9 +314,9 @@ inline sead::Vector3f setupHitEffect(al::HitSensor* a, al::HitSensor* b) {
 }
 
 inline sead::Vector3f getFireDir(al::LiveActor* from, al::LiveActor* to) {
-    sead::Vector3f dir = al::getTrans(to) - al::getTrans(from);
-    dir.normalize();
-    return dir;
+	sead::Vector3f dir = al::getTrans(to) - al::getTrans(from);
+	dir.normalize();
+	return dir;
 }
 
 // nullptr = guarded Hit, any string = forced emit with that effect
@@ -308,56 +328,56 @@ inline void isHitEffect(al::LiveActor* thisPtr, al::LiveActor* targetHost, const
 }
 
 inline bool isInHitBuffer(al::LiveActor* actor) {
-    for (int i = 0; i < hitBufferCount; i++) {
-        if (hitBuffer[i] == actor) return true;
-    }
-    return false;
+	for (int i = 0; i < hitBufferCount; i++) {
+		if (hitBuffer[i] == actor) return true;
+	}
+	return false;
 }
 
 // Guard Mario against attacks
 inline bool isValidAttackTarget(al::HitSensor* target) {
-    al::LiveActor* targetHost = al::getSensorHost(target);
-    return targetHost && !al::isSensorPlayerAll(target);
+	al::LiveActor* targetHost = al::getSensorHost(target);
+	return targetHost && !al::isSensorPlayerAll(target);
 }
 
 // Validate/invalidate a hit sensor and reset the hit buffer on activation
 inline void updateAttackSensor(al::LiveActor* actor, const char* name, bool active, bool& was) {
-    if (active && !was) { al::validateHitSensor(actor, name); hitBufferCount = 0; }
-    else if (!active && was) al::invalidateHitSensor(actor, name);
-    was = active;
+	if (active && !was) { al::validateHitSensor(actor, name); hitBufferCount = 0; }
+	else if (!active && was) al::invalidateHitSensor(actor, name);
+	was = active;
 }
 
 // Zero horizontal velocity if no floor geometry ahead
 inline void applyEdgeGuard(al::LiveActor* player) {
-    sead::Vector3f front;
-    al::calcFrontDir(&front, player);
-    sead::Vector3f grav = al::getGravity(player);
-    sead::Vector3f hitPos;
-    if (!alCollisionUtil::getHitPosOnArrow(player, &hitPos, al::getTrans(player) + front * 25.0f - grav * 50.0f, grav * 75.0f, nullptr, nullptr)) {
-        sead::Vector3f* vel = al::getVelocityPtr(player);
-        *vel = grav * vel->dot(grav);
-    }
+	sead::Vector3f front;
+	al::calcFrontDir(&front, player);
+	sead::Vector3f grav = al::getGravity(player);
+	sead::Vector3f hitPos;
+	if (!alCollisionUtil::getHitPosOnArrow(player, &hitPos, al::getTrans(player) + front * 25.0f - grav * 50.0f, grav * 75.0f, nullptr, nullptr)) {
+		sead::Vector3f* vel = al::getVelocityPtr(player);
+		*vel = grav * vel->dot(grav);
+	}
 }
 
 // Returns the nearest valid target within maxDist, skipping already-hit actors
 inline al::LiveActor* findNearestTarget(al::LiveActor* player, f32 maxDist) {
-    al::HitSensor* eye = al::getHitSensor(player, "Eye");
-    if (!eye) return nullptr;
+	al::HitSensor* eye = al::getHitSensor(player, "Eye");
+	if (!eye) return nullptr;
 
-    al::LiveActor* nearest = nullptr;
-    f32 best = maxDist;
+	al::LiveActor* nearest = nullptr;
+	f32 best = maxDist;
 
-    for (int i = 0; i < eye->mSensorCount; i++) {
-        al::HitSensor* s = eye->mSensors[i];
-        al::LiveActor* actor = al::getSensorHost(s);
-        if (!actor || actor == player
-            || (!al::isSensorNpc(s) && !al::isSensorEnemyBody(s) && !al::isSensorMapObj(s))
-            || !al::isAlive(actor) || isInHitBuffer(actor)) continue;
+	for (int i = 0; i < eye->mSensorCount; i++) {
+		al::HitSensor* s = eye->mSensors[i];
+		al::LiveActor* actor = al::getSensorHost(s);
+		if (!actor || actor == player
+			|| (!al::isSensorNpc(s) && !al::isSensorEnemyBody(s) && !al::isSensorMapObj(s))
+			|| !al::isAlive(actor) || isInHitBuffer(actor)) continue;
 
-        f32 d = al::calcDistance(player, actor);
-        if (d < best) { best = d; nearest = actor; }
-    }
-    return nearest;
+		f32 d = al::calcDistance(player, actor);
+		if (d < best) { best = d; nearest = actor; }
+	}
+	return nearest;
 }
 
 // =========================================================
@@ -365,30 +385,30 @@ inline al::LiveActor* findNearestTarget(al::LiveActor* player, f32 maxDist) {
 // =========================================================
 
 struct SpinState {
-    bool isGalaxy = false;
-    bool canGalaxy = true;
-    bool canStandard = true;
-    bool galaxyAfterStandard = false;
-    bool standardAfterGalaxy = false;
-    bool trigger = false;
-    int fakethrowRemainder = -1;
+	bool isGalaxy = false;
+	bool canGalaxy = true;
+	bool canStandard = true;
+	bool galaxyAfterStandard = false;
+	bool standardAfterGalaxy = false;
+	bool trigger = false;
+	int fakethrowRemainder = -1;
 
-    void reset() {
-        isGalaxy = false;
-        canGalaxy = true;
-        canStandard = true;
-        galaxyAfterStandard = false;
-        standardAfterGalaxy = false;
-        trigger = false;
-        fakethrowRemainder = -1;
-    }
+	void reset() {
+		isGalaxy = false;
+		canGalaxy = true;
+		canStandard = true;
+		galaxyAfterStandard = false;
+		standardAfterGalaxy = false;
+		trigger = false;
+		fakethrowRemainder = -1;
+	}
 
-    void resetForNewSpin() {
-        canGalaxy = true;
-        canStandard = true;
-        galaxyAfterStandard = false;
-        standardAfterGalaxy = false;
-    }
+	void resetForNewSpin() {
+		canGalaxy = true;
+		canStandard = true;
+		galaxyAfterStandard = false;
+		standardAfterGalaxy = false;
+	}
 };
 
 inline SpinState spin;
@@ -399,60 +419,60 @@ enum class SpinPre { Fallthrough, Accept, Reject };
 // =========================================================
 
 inline bool isBaseSpinAnim(PlayerAnimator* anim) {
-    return al::isEqualString(anim->mCurAnim, "SpinSeparate")
-        || al::isEqualString(anim->mCurAnim, "SpinSeparateSwim")
-        || al::isEqualString(anim->mCurAnim, "SpinLow")
-        || al::isEqualString(anim->mCurAnim, "CapeAttack")
-        || al::isEqualString(anim->mCurAnim, "TailAttack")
-        || al::isEqualString(anim->mCurAnim, "SwingAttack")
-        || al::isEqualString(anim->mCurAnim, "SwingAirAttack");
+	return al::isEqualString(anim->mCurAnim, "SpinSeparate")
+		|| al::isEqualString(anim->mCurAnim, "SpinSeparateSwim")
+		|| al::isEqualString(anim->mCurAnim, "SpinLow")
+		|| al::isEqualString(anim->mCurAnim, "CapeAttack")
+		|| al::isEqualString(anim->mCurAnim, "TailAttack")
+		|| al::isEqualString(anim->mCurAnim, "SwingAttack")
+		|| al::isEqualString(anim->mCurAnim, "SwingAirAttack");
 }
 
 inline bool isDoubleSpinAnim(PlayerAnimator* anim) {
-    return al::isEqualString(anim->mCurAnim, "SpinAttackLeft")
-        || al::isEqualString(anim->mCurAnim, "SpinAttackRight")
-        || al::isEqualString(anim->mCurAnim, "SpinAttackAirLeft")
-        || al::isEqualString(anim->mCurAnim, "SpinAttackAirRight");
+	return al::isEqualString(anim->mCurAnim, "SpinAttackLeft")
+		|| al::isEqualString(anim->mCurAnim, "SpinAttackRight")
+		|| al::isEqualString(anim->mCurAnim, "SpinAttackAirLeft")
+		|| al::isEqualString(anim->mCurAnim, "SpinAttackAirRight");
 }
 
 inline bool isSpinAnim(PlayerAnimator* anim) {
-    if (!anim) return false;
-    return isBaseSpinAnim(anim) || isDoubleSpinAnim(anim);
+	if (!anim) return false;
+	return isBaseSpinAnim(anim) || isDoubleSpinAnim(anim);
 }
 
 inline bool isPunchAnim(PlayerAnimator* anim) {
-    if (!anim) return false;
-    return al::isEqualString(anim->mCurAnim, "PunchL")
-        || al::isEqualString(anim->mCurAnim, "PunchR")
-        || al::isEqualString(anim->mCurAnim, "RabbitGet")
-        || al::isEqualString(anim->mCurAnim, "Kick");
+	if (!anim) return false;
+	return al::isEqualString(anim->mCurAnim, "PunchL")
+		|| al::isEqualString(anim->mCurAnim, "PunchR")
+		|| al::isEqualString(anim->mCurAnim, "RabbitGet")
+		|| al::isEqualString(anim->mCurAnim, "Kick");
 }
 
 inline bool isJumpPunchAnim(PlayerAnimator* anim) {
-    if (!anim) return false;
-    return al::isEqualString(anim->mCurAnim, "JumpPunchEndL")
-        || al::isEqualString(anim->mCurAnim, "JumpPunchEndR")
-        || al::isEqualString(anim->mCurAnim, "JumpPunchL")
-        || al::isEqualString(anim->mCurAnim, "JumpPunchR");
+	if (!anim) return false;
+	return al::isEqualString(anim->mCurAnim, "JumpPunchEndL")
+		|| al::isEqualString(anim->mCurAnim, "JumpPunchEndR")
+		|| al::isEqualString(anim->mCurAnim, "JumpPunchL")
+		|| al::isEqualString(anim->mCurAnim, "JumpPunchR");
 }
 
 inline bool isHipDropAnim(PlayerAnimator* anim) {
-    if (!anim) return false;
-    return al::isEqualString(anim->mCurAnim, "HipDrop")
-        || al::isEqualString(anim->mCurAnim, "HipDropPunch")
-        || al::isEqualString(anim->mCurAnim, "HipDropReaction")
-        || al::isEqualString(anim->mCurAnim, "HipDropPunchReaction")
-        || al::isEqualString(anim->mCurAnim, "SpinJumpDownFallL")
-        || al::isEqualString(anim->mCurAnim, "SpinJumpDownFallR")
-        || al::isEqualString(anim->mCurAnim, "SwimHipDrop")
-        || al::isEqualString(anim->mCurAnim, "SwimHipDropPunch")
-        || al::isEqualString(anim->mCurAnim, "SwimDive");
+	if (!anim) return false;
+	return al::isEqualString(anim->mCurAnim, "HipDrop")
+		|| al::isEqualString(anim->mCurAnim, "HipDropPunch")
+		|| al::isEqualString(anim->mCurAnim, "HipDropReaction")
+		|| al::isEqualString(anim->mCurAnim, "HipDropPunchReaction")
+		|| al::isEqualString(anim->mCurAnim, "SpinJumpDownFallL")
+		|| al::isEqualString(anim->mCurAnim, "SpinJumpDownFallR")
+		|| al::isEqualString(anim->mCurAnim, "SwimHipDrop")
+		|| al::isEqualString(anim->mCurAnim, "SwimHipDropPunch")
+		|| al::isEqualString(anim->mCurAnim, "SwimDive");
 }
 
 inline bool isDrillAnim(PlayerAnimator* anim) {
-    if (drillSensorRemaining > 0) return true;
-    if (!anim) return false;
-    return anim->isSubAnim("DrillIn")
-        || anim->isSubAnim("DrillOut")
-        || anim->isSubAnim("DrillOutFast");
+	if (drillSensorRemaining > 0) return true;
+	if (!anim) return false;
+	return anim->isSubAnim("DrillIn")
+		|| anim->isSubAnim("DrillOut")
+		|| anim->isSubAnim("DrillOutFast");
 }

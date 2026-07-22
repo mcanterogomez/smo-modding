@@ -1,14 +1,15 @@
 #pragma once
 #include "custom/_Globals.h"
 
-void isKartReset() {
+inline void isKartReset() {
     isAntiGravity = false;
     hoverBlend = 0.0f;
     propellerSpeed = 0.0f;
     al::hideMaterial(isKart, "GravityMT");
+    rs::resetCollision(static_cast<IUsePlayerCollision*>(isKart));
 }
 
-bool isKartSubmerged(Motorcycle* kart) {
+inline bool isKartSubmerged(Motorcycle* kart) {
     if (!al::isInWater(kart)) return false;
     sead::Vector3f surfacePos, surfaceNormal;
     return !al::calcFindWaterSurface(&surfacePos, &surfaceNormal, kart, al::getTrans(kart), sead::Vector3f::ey, 75.0f);
@@ -33,7 +34,6 @@ namespace PlayerKart {
             al::initCreateActorNoPlacementInfo(isKart, *actorInfo);
             kartBorder = new WorldEndBorderKeeper(isKart);
             isKart->makeActorDead();
-            isKartReset();
 
             // Wheel tilt (Z): one value, mirrored for the left side
             al::initJointLocalZRotator(isKart, &wheelTilt, "FrontTireR"); al::initJointLocalMinusZRotator(isKart, &wheelTilt, "FrontTireL");

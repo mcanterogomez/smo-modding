@@ -2,6 +2,17 @@
 #include "ModConfig.h"
 #include "custom/_Globals.h"
 
+inline bool isDefinitve() {
+    static bool value = al::isExistFile("ObjectData/MarioDefinitve.txt");
+    return value;
+}
+
+inline bool isTempWait() {
+    for (const char* name : {"WaitHot", "WaitCold", "WaitVeryCold"})
+        if (isHakoniwa->mAnimator->isAnim(name)) return true;
+    return false;
+}
+
 namespace CustomAnimation {
 
     inline const char* remapAnim(const char* name, PlayerAnimator* anim = nullptr) {
@@ -73,27 +84,40 @@ namespace CustomAnimation {
         return nullptr;
     }
 
-    // Swaps animation names before they reach the player and sub-actors
+    // Which idle-cycle anim the current suit uses, or nullptr if none — add new suits here
+    inline const char* idleCycleAnim(bool alt, PlayerAnimator* anim = nullptr) {
+        if (!isHakoniwa || (anim && anim != isHakoniwa->mAnimator)) return nullptr;
+        if (isDefinitve()) return alt ? "AreaWaitView" : "AreaWaitStretch";
+        //if (isBrawl) return alt ? "AreaWaitView" : "AreaWaitStretch"; // only one anim, ignores alt
+        return nullptr;
+    }
+
+    // Every 720 idle frames, swaps Wait to the suit's cycle anim and back, flipping alt each time
+    inline void updateIdleCycle(PlayerActorHakoniwa* thisPtr) {
+        static int idleCycle = 0;
+        static bool alt = false;
+        const char* altAnim = idleCycleAnim(alt);
+        if (!altAnim || isTempWait() || !al::isNerve(thisPtr, getNerveAt(nrvHakoniwaWait))) { idleCycle = 0; return; }
+
+        if (idleCycle >= 0) {
+            if (++idleCycle >= 720) { thisPtr->mAnimator->startAnim(altAnim); idleCycle = -1; }
+        } else if (thisPtr->mAnimator->isAnimEnd()) { thisPtr->mAnimator->startAnim("Wait"); idleCycle = 0; alt = !alt; }
+    }
+
+    // Intercepts startAnim, remaps to suit-specific names
     struct PlayerAnimatorStartAnimHook : public mallow::hook::Trampoline<PlayerAnimatorStartAnimHook> {
         static void Callback(PlayerAnimator* thisPtr, const sead::SafeString& animName) {
-            if (al::isEqualString(animName.cstr(), "WaitRelaxStart")
-                && remapAnim("Wait", thisPtr)) return;
-
             const char* swapped = remapAnim(animName.cstr(), thisPtr);
             Orig(thisPtr, swapped ? swapped : animName.cstr());
         }
     };
 
-    // Makes engine checks like isAnim("Move") return true when "MoveBrawl" is playing
+    // Makes isAnim match remapped names; "Wait" reads false while remap or the idle cycle owns it, so the engine never triggers WaitRelaxStart
     struct PlayerAnimatorIsAnimHook : public mallow::hook::Trampoline<PlayerAnimatorIsAnimHook> {
         static bool Callback(PlayerAnimator* thisPtr, const sead::SafeString& animName) {
             const char* swapped = remapAnim(animName.cstr(), thisPtr);
-
-            if (swapped) {
-                if (al::isEqualString(animName.cstr(), "Wait")) return false;
-                return Orig(thisPtr, swapped);
-            }
-            return Orig(thisPtr, animName);
+            if (al::isEqualString(animName.cstr(), "Wait") && (swapped || idleCycleAnim(false, thisPtr))) return false;
+            return Orig(thisPtr, swapped ? swapped : animName.cstr());
         }
     };
 

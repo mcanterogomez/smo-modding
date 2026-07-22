@@ -120,14 +120,14 @@ using mallow::log::logLine;
 // =========================================================
 
 // Helper: nerve pointer from binary offset
-const al::Nerve* getNerveAt(uintptr_t offset) {
+inline const al::Nerve* getNerveAt(uintptr_t offset) {
 	return (const al::Nerve*)((((u64)malloc) - 0x00724b94) + offset);
 }
 
 inline ModConfig* isConfig() { return mallow::config::getConfg<ModConfig>(); }
 
 // Spin button config
-bool isPadTriggerGalaxySpin(int port) {
+inline bool isPadTriggerGalaxySpin(int port) {
 	switch (isConfig()->attackButton) {
 		case 'X': return al::isPadTriggerX(port);
 		default: return al::isPadTriggerY(port);
@@ -210,40 +210,40 @@ const uintptr_t nrvHakoniwaJump = 0x1D78948;
 // =========================================================
 
 // Suit flags
-bool isMario = false;
-bool isNoCap = false;
-bool isFeather = false;
-bool isFire = false;
-bool isIce = false;
-bool isTanooki = false;
-bool isDrill = false;
-bool isMetal = false;
-bool isFly = false;
-bool isBrawl = false;
-bool isSuper = false;
-bool isKnight = false;
-bool isCapeOn = false;
-bool isWeaponOn = false;
+inline bool isMario = false;
+inline bool isNoCap = false;
+inline bool isFeather = false;
+inline bool isFire = false;
+inline bool isIce = false;
+inline bool isTanooki = false;
+inline bool isDrill = false;
+inline bool isMetal = false;
+inline bool isFly = false;
+inline bool isBrawl = false;
+inline bool isSuper = false;
+inline bool isKnight = false;
+inline bool isCapeOn = false;
+inline bool isWeaponOn = false;
 
 // Action flags
-bool canAction = false;
-bool nextThrowLeft = true;
-bool prevIsCarry = false;
+inline bool canAction = false;
+inline bool nextThrowLeft = true;
+inline bool prevIsCarry = false;
 
 // Player state flags
-bool isSpinActive = false;
-bool isSpinRethrow = false;
-bool isPunchRight = false;
-bool isJumpPunchActive = false;
-bool isDoubleJump = false;
-bool isDoubleJumpConsume = false;
-bool isSuperRunningOnSurface = false;
-bool isAntiGravity = false;
+inline bool isSpinActive = false;
+inline bool isSpinRethrow = false;
+inline bool isPunchRight = false;
+inline bool isJumpPunchActive = false;
+inline bool isDoubleJump = false;
+inline bool isDoubleJumpConsume = false;
+inline bool isSuperRunningOnSurface = false;
+inline bool isAntiGravity = false;
 
 // Proximity flags
-bool isNearCollectible = false;
-bool isNearTreasure = false;
-bool isNearSwoonedEnemy = false;
+inline bool isNearCollectible = false;
+inline bool isNearTreasure = false;
+inline bool isNearSwoonedEnemy = false;
 
 // =========================================================
 //                       ACTORS
@@ -269,18 +269,18 @@ inline al::LiveActorGroup* tankBullets = nullptr;
 // =========================================================
 
 // Hit buffer
-al::LiveActor* hitBuffer[0x40];
-int hitBufferCount = 0;
+inline al::LiveActor* hitBuffer[0x40];
+inline int hitBufferCount = 0;
 
 // Attack counters (-1 = inactive)
-int attackSensorRemaining = -1;
-int fireStep = -1;
-int drillStep = -1;
-int drillSensorRemaining = -1; // hitbox lingers N frames after drill pop
-int isCapeActive = -1;
-int isMarioActive = 0; // 0 = none, 1 = enabling, -1 = disabling
+inline int attackSensorRemaining = -1;
+inline int fireStep = -1;
+inline int drillStep = -1;
+inline int drillSensorRemaining = -1; // hitbox lingers N frames after drill pop
+inline int isCapeActive = -1;
+inline int isMarioActive = 0; // 0 = none, 1 = enabling, -1 = disabling
 
-bool isActionBusy() { return fireStep >= 0 || drillStep >= 0; }
+inline bool isActionBusy() { return fireStep >= 0 || drillStep >= 0; }
 
 // Joints
 inline float glideLean = 0.0f;

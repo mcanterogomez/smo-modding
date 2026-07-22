@@ -213,21 +213,23 @@ namespace PlayerSpinAttack {
     static void SwimSpinAttackLogic(PlayerStateSwim* thisPtr) {
         auto* anim = isHakoniwa->mAnimator;
         bool isPunch = anim->isAnim("PunchR") || anim->isAnim("PunchL");
+        bool isNear = anim->isAnim("RabbitGet") || anim->isAnim("Kick");
+        float frame = anim->getAnimFrame();
 
         if (spin.trigger && al::isFirstStep(thisPtr)) {
             hitBufferCount = 0;
             spin.trigger = false;
             isSpinActive = true;
             spin.isGalaxy = !isPunch;
-
-            if (isNearCollectible || isNearTreasure || isNearSwoonedEnemy) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 15; }
-            else if (!isPunch) { al::validateHitSensor(thisPtr->mActor, "GalaxySpin"); attackSensorRemaining = 32; }
+            isNearTarget = findNearestTarget(isHakoniwa, 250.0f);
+            if (!isPunch && !isNear) { al::validateHitSensor(thisPtr->mActor, "GalaxySpin"); attackSensorRemaining = 32; }
         }
 
-        if (anim->isAnim("SwingAttack")) applyLunge(isHakoniwa, 2.0f, 5.0f);
+        if ((anim->isAnim("RabbitGet") && frame >= 7.0f) || (anim->isAnim("Kick") && frame >= 2.0f)) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 15; }
+        else if (anim->isAnim("SwingAttack")) applyLunge(isHakoniwa, 2.0f, 5.0f);
         else if (isPunch) {
             applyLunge(isHakoniwa, 5.0f, 5.0f);
-            if (anim->getAnimFrame() >= 6.0f) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 6; }
+            if (frame >= 6.0f) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 6; }
         }
     }
 

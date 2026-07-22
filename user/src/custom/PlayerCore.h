@@ -2,6 +2,7 @@
 #include "ModConfig.h"
 #include "custom/_Globals.h"
 #include "custom/_Nerves.h"
+#include "custom/CustomAnimation.h"
 #include "custom/PowerUps.h"
 #include "custom/PlayerFreeze.h"
 
@@ -71,6 +72,9 @@ namespace PlayerCore {
                 PowerUps::executeMovement(thisPtr);
             #endif
             auto* model  = thisPtr->mModelHolder->findModelActor("Normal");
+
+            // Handle idle animation cycle
+            CustomAnimation::updateIdleCycle(thisPtr);
 
             // Toggle configs
             if (al::isPadHoldL(-1) && al::isPadHoldPressLeftStick(-1)

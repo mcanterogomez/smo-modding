@@ -1,4 +1,4 @@
-#include "custom/_Globals.h"
+#include "custom/.Globals.h"
 #include "custom/PlayerKart.h"
 
 struct KartInitPlayerHook : public mallow::hook::Trampoline<KartInitPlayerHook> {

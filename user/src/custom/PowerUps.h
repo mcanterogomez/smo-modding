@@ -1,10 +1,11 @@
 #pragma once
 #include "ModConfig.h"
-#include "custom/_Globals.h"
-#include "custom/_Nerves.h"
+#include "custom/.Globals.h"
+#include "custom/.Nerves.h"
+#include "custom/PlayerDrill.h"
+#include "custom/PlayerFireBall.h"
 #include "custom/PlayerFreeze.h"
 #include "headers/PlayerIceCube.h"
-#include "custom/WallStick.h"
 
 namespace PowerUps {
 
@@ -113,10 +114,8 @@ namespace PowerUps {
         auto* model  = thisPtr->mModelHolder->findModelActor("Normal");
         auto* damage = thisPtr->mDamageKeeper;
 
-        bool isMove = thisPtr->mInput->isMove();
         bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
         bool isWater = al::isInWater(thisPtr);
-        bool isSurface = thisPtr->mWaterSurfaceFinder->isFoundSurface();
         bool isHack = thisPtr->mHackKeeper && thisPtr->mHackKeeper->mHackActor;
         bool isFlicker = damage && damage->mDamageInvalidCount > 0;
         bool isActive = !isFlicker && !isHack && !rs::isActiveDemo(thisPtr);
@@ -125,66 +124,11 @@ namespace PowerUps {
         f32 dashBorder = thisPtr->mConst->getDashFastBorderSpeed();
 
         // Handle hammer attack
-        if (isHammer
-            && al::isAlive(isHammer)
-            && !al::isNerve(thisPtr, &HammerNrv)
-        ) {
-            isHammer->makeActorDead();
-            al::invalidateHitSensor(isHammer, "AttackHack");
-        }
+        if (isHammer && al::isAlive(isHammer)
+            && !al::isNerve(thisPtr, &HammerNrv)) { isHammer->makeActorDead(); al::invalidateHitSensor(isHammer, "AttackHack"); }
 
         // Handle logic for Drill Suit
-        legScale.set(1.0f, 1.0f, 1.0f);
-        if (isDrill) {
-            auto* head = al::tryGetSubActor(model, "頭");
-            auto* drill = al::tryGetSubActor(model, "Drill");
-            bool capOn = thisPtr->mHackCap->isPutOn();
-            bool inHipDrop = al::isNerve(thisPtr, getNerveAt(nrvHakoniwaHipDrop));
-            bool inLand = anim->isAnim("HipDropLand");
-            bool drillDrop = isActive && capOn && inHipDrop && (!inLand || anim->getAnimFrame() < 8.0f);
-
-            // Drill subactor and effects: always run so warps and demos clean up
-            if (drill && drillDrop && al::isDead(drill)
-            ) {
-                drill->appear();
-                al::tryStartAction(drill, "DrillSpin");
-                al::tryEmitEffect(model, "DrillSpinDrop", nullptr);
-                al::tryStartSe(model, "DrillSpin");
-            }
-            if (!inHipDrop || inLand) al::tryDeleteEffect(model, "DrillSpinDrop");
-            if (drill && !drillDrop && al::isAlive(drill)) drill->kill();
-
-            float legTarget = drillDrop ? 0.0f : 1.0f;
-            legScale.set(legTarget, legTarget, legTarget);
-
-            // Visuals: allow flicker so cap and head action recover after a hit, skip demos and captures
-            if (capOn && !isHack && !rs::isActiveDemo(thisPtr)
-            ) {
-                if (drillDrop) thisPtr->mAnimator->forceCapOff();
-                else thisPtr->mAnimator->forceCapOn();
-
-                const char* headAction = isDrillAnim(anim) ? "DrillSpin" : "DrillWait";
-                if (head && !al::isActionPlaying(head, headAction)) al::tryStartAction(head, headAction);
-            }
-
-            // Active-only mechanics
-            if (isActive && capOn
-            ) {
-                if (!inHipDrop || !rs::isCollidedWall(thisPtr->mCollider)) WallStick::update(thisPtr);
-
-                bool isDrillAttack = isDrillAnim(anim);
-                static bool wasDrillAttack = false;
-                updateAttackSensor(thisPtr, "GalaxySpin", isDrillAttack, wasDrillAttack);
-
-                if (drillSensorRemaining > 0) {
-                    al::tryEmitEffect(model, "DrillSpin", nullptr);
-                    if (--drillSensorRemaining == 0) al::tryDeleteEffect(model, "DrillSpin");
-                }
-
-                if (!al::isNerve(thisPtr, getNerveAt(nrvHakoniwaJump))
-                    && !al::isNerve(thisPtr, getNerveAt(nrvHakoniwaFall))) drillSensorRemaining = 0;
-            }
-        }
+        PlayerDrill::update(thisPtr);
 
         // Handle weapon spawning
         static int holdRightFrames = 0;
@@ -214,104 +158,14 @@ namespace PowerUps {
         if (isWeaponOn && hand && isMario && !al::isActionPlayingSubActor(model, "右手", "AreaWaitDance03")) al::startActionSubActor(model, "右手", "AreaWaitDance03");
         if (isWeaponOn && hand && isKnight && !al::isActionPlayingSubActor(model, "右手", "GrabCeilWait")) al::startActionSubActor(model, "右手", "GrabCeilWait");
 
-        // Handle fireball/iceball/blaster attack
-        const char* jointName;
-        const char* fireAnim;
-        al::LiveActorGroup* currentPool;
-        bool isBlast = isWeaponOn && weapon == blaster;
+        // Fireball / Iceball / Blaster
+        PlayerFireBall::update(thisPtr);
 
-        if (isBlast) {
-            jointName = "HandR";
-            fireAnim = "BlastShoot";
-            currentPool = tankBullets;
-        } else {
-            jointName = nextThrowLeft ? "HandL" : "HandR";
-            fireAnim = nextThrowLeft ? "FireL" : "FireR";
-            currentPool = isIce ? iceBalls : fireBalls;
-        }
-
-        if (!currentPool) return;
-        bool isFullBody = (!isMove && onGround && (!isWater || isSurface));
-        auto restoreEyeRadius = [&]() { al::setSensorRadius(thisPtr, "Eye", 800.0f); }; // Restore default
-
-        if ((isMario || isFire || isIce || isBrawl || isSuper)
-            && fireStep < 0 && (canAction || al::isActionPlaying(model, "GlideFloat") || al::isActionPlaying(model, "GlideFloatSuper"))
-            && al::isPadTriggerR(-1)
-        ) {
-            auto* projectile = currentPool->getDeadActor();
-            if (projectile && al::isDead(projectile)) {
-                fireStep = 0;
-                canAction = false;
-                // Increase Eye sensor range for blaster homing
-                if (isBlast) al::setSensorRadius(thisPtr, "Eye", 1600.0f);
-
-                anim->startUpperBodyAnim(fireAnim);
-                if (isFullBody) anim->startAnim(fireAnim);
-                if (isBlast) al::tryStartSe(thisPtr, "BlasterShoot");
-            }
-        }
-        if (fireStep >= 0) {
-            bool isShooting = anim->isUpperBodyAnim("FireL") || anim->isUpperBodyAnim("FireR") || anim->isUpperBodyAnim("BlastShoot")
-                || anim->isAnim("FireL") || anim->isAnim("FireR") || anim->isAnim("BlastShoot");
-
-            if (!isShooting) {
-                fireStep = -1;
-                restoreEyeRadius();
-                return;
-            }
-            if ((fireStep == 2 && !isBlast) || (fireStep == 40 && isBlast)) {
-                // Home in on nearest target
-                isNearTarget = findNearestTarget(thisPtr, isBlast ? 1600.0f : 800.0f);
-                if (isNearTarget) {
-                    sead::Vector3f dir = al::getTrans(isNearTarget) - al::getTrans(thisPtr);
-                    dir.normalize();
-                    sead::Vector3f fwd;
-                    al::calcQuatFront(&fwd, model);
-
-                    if (fwd.dot(dir) > 0.85f) al::faceToDirection(model, al::getTrans(isNearTarget) - al::getTrans(thisPtr));
-                }
-
-                hitBufferCount = 0;
-                sead::Vector3f startPos;
-                al::calcJointPos(&startPos, model, jointName);
-                auto* projectile = currentPool->getDeadActor();
-
-                if (isBlast) {
-                    sead::Vector3f fwd;
-                    al::calcQuatFront(&fwd, model);
-                    fwd.normalize();
-
-                    ((TankBullet*)projectile)->shoot(startPos, fwd * 85.0f, 200, false, false);
-                    al::tryEmitEffect(model, "Shoot", nullptr);
-                    al::tryStartSe(projectile, "Shoot");
-                } else {
-                    sead::Vector3f offset(0.0f, 0.0f, 0.0f);
-
-                    if (isSuper) ((FireBrosFireBall*)projectile)->shoot(startPos, al::getQuat(model), offset, true, 0, true);
-                    else ((FireBrosFireBall*)projectile)->shoot(startPos, al::getQuat(model), offset, true, 0, false);
-
-                    if (isIce) al::tryStartSe(projectile, "IceBallShoot");
-                    else al::tryStartSe(projectile, "FireBallShoot");
-                }
-
-                if (!isBlast) nextThrowLeft = !nextThrowLeft;
-            }
-            if (anim->isUpperBodyAnimEnd()) {
-                if (isFullBody) al::setNerve(thisPtr, getNerveAt(nrvHakoniwaFall));
-                anim->clearUpperBodyAnim();
-                fireStep = -1;
-                restoreEyeRadius();
-            }
-            else fireStep++;
-        }
-        canAction = false;
-
-        // Handle cape logic for Mario/Brawl suit
         bool isGliding = al::isActionPlaying(model, "Glide") || al::isActionPlaying(model, "GlideAlt")
             || al::isActionPlaying(model, "GlideFloatStart") || al::isActionPlaying(model, "GlideFloat") || al::isActionPlaying(model, "GlideFloatSuper")
             || al::isActionPlaying(model, "JumpBroad8") || al::isActionPlaying(model, "JumpBroad8Alt");
 
-        // Handle glide gauge
+        // Handle Glide Gauge
         if (isGauge && !isSuper) {
             static bool wasInAir = false;
             static bool wasStartup = false;
@@ -341,14 +195,13 @@ namespace PowerUps {
             wasInAir = inAir;
         }
 
-        // Handle cape spawning
+        // Handle Cape spawning
         auto* cape = al::tryGetSubActor(model, "ケープ");
         isCapeOn = cape && al::isAlive(cape);
         bool capeTimer = (isMario || isBrawl) && !isGliding && isActive && isCapeActive > 0 && --isCapeActive == 0;
 
         if (cape && !isCapeOn) isCapeActive = -1;
-        if (cape && isCapeOn && (isMarioActive == -1 || capeTimer)
-        ) {
+        if (cape && isCapeOn && (isMarioActive == -1 || capeTimer)) {
             cape->kill();
             al::tryEmitEffect(model, "AppearBloom", nullptr);
             al::tryStartSe(thisPtr, "Bloom");
@@ -357,8 +210,7 @@ namespace PowerUps {
 
         // Handle tail logic for Tanooki suit
         auto* tail = al::tryGetSubActor(model, "尻尾");
-        if (isTanooki && tail && al::isAlive(tail)
-        ) {
+        if (isTanooki && tail && al::isAlive(tail)) {
             if (isGliding && !al::isActionPlaying(tail, "TailSpin")) {
                 al::tryStartAction(tail, "TailSpin");
                 al::tryEmitEffect(model, "TailSpin", nullptr);
@@ -391,8 +243,7 @@ namespace PowerUps {
         }
         // Handle logic for Flying suit
         if (isFly) {
-            if (isActive && !al::isHideModel(model)
-            ) {
+            if (isActive && !al::isHideModel(model)) {
                 if (isGliding) {
                     al::tryDeleteEffect(model, "GlideWindL");
                     al::tryDeleteEffect(model, "GlideWindR");
@@ -423,20 +274,15 @@ namespace PowerUps {
             updateAttackSensor(thisPtr, "GalaxySpin", isMoveSuper, wasMoveSuper);
 
             // Apply effects for DashFastSuper
-            bool isDash = al::isPadHoldR(-1) && !isActionBusy()
-                && al::isActionPlaying(model, "MoveSuper") && speedH >= dashBorder;
+            bool isDash = al::isPadHoldR(-1) && !isActionBusy() && al::isActionPlaying(model, "MoveSuper") && speedH >= dashBorder;
             bool isGlide = al::isActionPlaying(model, "Glide") && !isActionBusy();
 
             if (isDash) al::tryEmitEffect(model, "DashSuper", nullptr);
             else if (isGlide) al::tryEmitEffect(model, "DashSuperGlide", nullptr);
-            else {
-                al::tryDeleteEffect(model, "DashSuper");
-                al::tryDeleteEffect(model, "DashSuperGlide");
-            }
+            else { al::tryDeleteEffect(model, "DashSuper"); al::tryDeleteEffect(model, "DashSuperGlide"); }
             
             // Apply effects for Invincibility
-            if (isActive && !al::isHideModel(model)
-            ) {
+            if (isActive && !al::isHideModel(model)) {
                 if (damage) {
                     if (!damage->mIsPreventDamage) damage->activatePreventDamage();
                     damage->mInvincibilityTimer = INT_MAX;
@@ -473,8 +319,7 @@ namespace PowerUps {
             bool isDashNow = al::isPadHoldR(-1)
                 && isMoving && !isActionBusy() && speedH >= dashBorder;
 
-            if (isDashNow && !wasDash
-            ) {
+            if (isDashNow && !wasDash) {
                 const char* fx = isSuper ? "AccelSecond" : "Accel";
                 if (!al::isEffectEmitting(model, fx)) { al::tryStartSe(thisPtr, fx); al::tryEmitEffect(model, fx, nullptr); }
             }
@@ -509,8 +354,7 @@ namespace PowerUps {
     struct PlayerCarryKeeperStartCarry : public mallow::hook::Trampoline<PlayerCarryKeeperStartCarry> {
         static void Callback(PlayerCarryKeeper* thisPtr, al::HitSensor* sensor) {
             // if in hammer nerve block carry start
-            if (isHakoniwa
-                && isHakoniwa->getNerveKeeper()
+            if (isHakoniwa && isHakoniwa->getNerveKeeper()
                 && isHakoniwa->getNerveKeeper()->getCurrentNerve() == &HammerNrv) return;
             
             Orig(thisPtr, sensor);
@@ -533,23 +377,16 @@ namespace PowerUps {
             bool isWater = al::isInWater(thisPtr);
             bool isAir = !isGround && !isWater;
 
-            if (wasWater || (wasGround && isAir)
-            ) { 
-                isDoubleJump = false; 
-                isDoubleJumpConsume = false;
-            }
-            if (isAir && !isDoubleJump
-                && (al::isPadTriggerA(-1) || al::isPadTriggerB(-1))
-            ) {
+            if (wasWater || (wasGround && isAir)) { isDoubleJump = false; isDoubleJumpConsume = false; }
+
+            if (isAir && !isDoubleJump && (al::isPadTriggerA(-1) || al::isPadTriggerB(-1))) {
                 isDoubleJump = true;
                 isDoubleJumpConsume = true;
 
                 al::tryEmitEffect(keeper, "DoubleJump", nullptr);
                 al::setNerve(thisPtr, getNerveAt(nrvHakoniwaJump));
             }
-            if (isDoubleJumpConsume
-                && al::isFirstStep(thisPtr)
-            ) {
+            if (isDoubleJumpConsume && al::isFirstStep(thisPtr)) {
                 anim->startAnim("PoleHandStandJump");
                 isDoubleJumpConsume = false;
             }
@@ -559,7 +396,6 @@ namespace PowerUps {
     struct PlayerStateJumpTryCountUp : public mallow::hook::Trampoline<PlayerStateJumpTryCountUp> {
         static void Callback(PlayerStateJump* state, PlayerContinuousJump* cont) {
             if (isBrawl) return;
-
             Orig(state, cont);
         }
     };
@@ -583,8 +419,7 @@ namespace PowerUps {
 
             float speed = al::calcSpeed(thisPtr);
 
-            if (anim->isAnim("Glide")
-            ) {
+            if (anim->isAnim("Glide")) {
                 sead::Vector3f camSide, marioSide;
                 al::calcCameraSideDir(&camSide, thisPtr, 0);
                 al::calcSideDir(&marioSide, thisPtr);
@@ -597,10 +432,8 @@ namespace PowerUps {
                 glidePitch = al::lerpValue(glidePitch, 0.0f, 0.2f);
             }
 
-            if (al::isFirstStep(thisPtr)
-            ) {
-                if ((isMario || isBrawl) && cape && al::isDead(cape)
-                ) {
+            if (al::isFirstStep(thisPtr)) {
+                if ((isMario || isBrawl) && cape && al::isDead(cape)) {
                     cape->appear();
                     al::tryEmitEffect(keeper, "AppearBloom", nullptr);
                     al::tryStartSe(thisPtr, "Bloom");
@@ -613,23 +446,18 @@ namespace PowerUps {
                 if (anim->isAnimEnd() && anim->isAnim("GlideFloatStart")) anim->startAnim("GlideFloat");
             }
 
-            if (al::isGreaterStep(thisPtr, 25)
-            ) {
+            if (al::isGreaterStep(thisPtr, 25)) {
                 if (al::isPadTriggerA(-1) || al::isPadTriggerB(-1)) al::setNerve(thisPtr, getNerveAt(nrvHakoniwaFall));
                 if (al::isPadTriggerZL(-1) || al::isPadTriggerZR(-1)) al::setNerve(thisPtr, getNerveAt(nrvHakoniwaHipDrop));
-                if (isPadTriggerGalaxySpin(-1)
-                ) {
-                    if (!al::isNerve(thisPtr, getNerveAt(spinCapNrvOffset))
-                    ) {
+                if (isPadTriggerGalaxySpin(-1)) {
+                    if (!al::isNerve(thisPtr, getNerveAt(spinCapNrvOffset))) {
                         spin.resetForNewSpin();
                         spin.trigger = true;
                         al::setNerve(thisPtr, getNerveAt(spinCapNrvOffset));
                     }
                 }
-                else if (al::isPadTriggerX(-1) || al::isPadTriggerY(-1)
-                ) {
-                    if (!al::isNerve(thisPtr, getNerveAt(spinCapNrvOffset))
-                    ) {
+                else if (al::isPadTriggerX(-1) || al::isPadTriggerY(-1)) {
+                    if (!al::isNerve(thisPtr, getNerveAt(spinCapNrvOffset))) {
                         if (!thisPtr->mHackCap || !thisPtr->mHackCap->isEnableThrow()) al::setNerve(thisPtr, getNerveAt(nrvHakoniwaFall));
                         else {
                             spin.resetForNewSpin();
@@ -666,7 +494,6 @@ namespace PowerUps {
     struct PlayerInputFunctionIsTriggerJump : public mallow::hook::Trampoline<PlayerInputFunctionIsTriggerJump> {
         static bool Callback(const al::LiveActor* actor, s32 port) {
             if (isDrillAnim(isHakoniwa ? isHakoniwa->mAnimator : nullptr)) return false;
-
             return Orig(actor, port);
         }
     };
@@ -674,7 +501,6 @@ namespace PowerUps {
     struct PlayerInputFunctionIsHoldAction : public mallow::hook::Trampoline<PlayerInputFunctionIsHoldAction> {
         static bool Callback(const al::LiveActor* actor, s32 port) {
             bool isFlying = isHakoniwa && isHakoniwa->mHackCap && isHakoniwa->mHackCap->isFlying();
-
             return Orig(actor, port) || (al::isPadHoldR(port) && !isFlying);
         }
     };
@@ -687,37 +513,19 @@ namespace PowerUps {
             PlayerConst* playerConst = const_cast<PlayerConst*>(thisPtr->mConst);
 
             bool isDash = al::isPadHoldR(-1) && !isActionBusy();
-
-            if (isSuper && isDash
-            ) {
-                playerConst->mNormalMaxSpeed = 28.0f;
-                thisPtr->mMaxSpeed = 28.0f;
-            }
-            else if (isDash
-            ) {
-                playerConst->mNormalMaxSpeed = 21.0f;
-                thisPtr->mMaxSpeed = 21.0f;
-            }
-            else {
-                playerConst->mNormalMaxSpeed = 14.0f;
-                thisPtr->mMaxSpeed = 14.0f;
-            }
+            if (isSuper && isDash) { playerConst->mNormalMaxSpeed = 28.0f; thisPtr->mMaxSpeed = 28.0f; }
+            else if (isDash) { playerConst->mNormalMaxSpeed = 21.0f; thisPtr->mMaxSpeed = 21.0f; }
+            else { playerConst->mNormalMaxSpeed = 14.0f; thisPtr->mMaxSpeed = 14.0f; }
             return update;
         }
     };
 
     struct PlayerAnimatorSetAnimRateCommon : public mallow::hook::Trampoline<PlayerAnimatorSetAnimRateCommon> {
         static void Callback(PlayerAnimator* thisPtr, float rate) {
-            if (isMetal && isHakoniwa
-                && thisPtr == isHakoniwa->mAnimator
-            ) {
+            if (isMetal && isHakoniwa && thisPtr == isHakoniwa->mAnimator) {
                 auto* wsf = isHakoniwa->mWaterSurfaceFinder;
                 bool nearSurface = wsf && wsf->isFoundSurface() && wsf->getDistance() <= 80.0f;
-                if (al::isInWater(isHakoniwa) && !nearSurface
-                ) {
-                    rate *= 0.50f;
-                    thisPtr->mAnimFrameCtrl->mRate = rate;
-                }
+                if (al::isInWater(isHakoniwa) && !nearSurface) { rate *= 0.50f; thisPtr->mAnimFrameCtrl->mRate = rate; }
             }
             Orig(thisPtr, rate);
         }
@@ -745,9 +553,7 @@ namespace PowerUps {
                     && al::getGravity(thisPtr->mPlayer).dot(al::getVelocity(thisPtr->mPlayer)) >= 0.0f
                     && al::calcSpeedH(thisPtr->mPlayer) >= MIN_SPEED_RUN_ON_WATER;
             }
-            else {
-                return Orig(thisPtr);
-            }
+            else { return Orig(thisPtr); }
         }
     };
 
@@ -762,9 +568,7 @@ namespace PowerUps {
                 isSuperRunningOnSurface = result;
                 return result;
             }
-            else {
-                return Orig(thisPtr);
-            }
+            else { return Orig(thisPtr); }
         }
     };
 
@@ -873,6 +677,6 @@ namespace PowerUps {
         invinciblePatcher.WriteInst(0x1F2003D5); // NOP
 
         // Install Wall Stick hooks
-        WallStick::Install();
+        PlayerDrill::Install();
     }
 }

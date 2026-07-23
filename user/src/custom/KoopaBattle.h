@@ -1,12 +1,12 @@
 #pragma once
-#include "custom/_Globals.h"
+#include "custom/.Globals.h"
 
 namespace KoopaBattle {
 
 	inline bool isKnockBack = false;
 
     // Reads Bowser's internal kill-ready flag
-    inline bool isKillReady(al::LiveActor* koopa) {
+    inline bool isKillReady(const al::LiveActor* koopa) {
 		if (!koopa || !al::isAlive(koopa)) return false;
 		auto* cap = *reinterpret_cast<void**>((char*)koopa + 264);
 		if (!cap) return false;

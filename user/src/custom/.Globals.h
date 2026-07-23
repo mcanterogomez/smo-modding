@@ -165,7 +165,7 @@ inline const al::AnimInfoTable* getAnimTable(const T* actor) {
 }
 
 template<typename... Models>
-inline bool isType(al::LiveActor* actor, const char* name, Models... models) {
+inline bool isType(const al::LiveActor* actor, const char* name, Models... models) {
 	if (!al::isEqualSubString(typeid(*actor).name(), name)) return false;
 	if constexpr (sizeof...(models) == 0) return true;
 	bool matched = false, excluded = false;
@@ -174,7 +174,7 @@ inline bool isType(al::LiveActor* actor, const char* name, Models... models) {
 }
 
 template<typename... Names>
-inline bool isAnyType(al::LiveActor* actor, Names... names) {
+inline bool isAnyType(const al::LiveActor* actor, Names... names) {
 	const char* type = typeid(*actor).name();
 	bool matched = false, excluded = false;
 	((names[0] == '!' ? excluded |= al::isEqualSubString(type, names + 1) : matched |= al::isEqualSubString(type, names)), ...);
@@ -183,7 +183,7 @@ inline bool isAnyType(al::LiveActor* actor, Names... names) {
 
 // Check if has sensor type(s), each checked independently across all sensors
 template<typename... Fns>
-inline bool hasSensor(al::LiveActor* actor, Fns... checks) {
+inline bool hasSensor(const al::LiveActor* actor, Fns... checks) {
 	al::HitSensorKeeper* keeper = actor->getHitSensorKeeper();
 	auto any = [&](auto check) {
 		for (s32 i = 0; keeper && i < keeper->getSensorNum(); i++)
@@ -282,7 +282,6 @@ inline int isMarioActive = 0; // 0 = none, 1 = enabling, -1 = disabling
 
 inline bool isActionBusy() { return fireStep >= 0 || drillStep >= 0; }
 
-// Joints
 inline float glideLean = 0.0f;
 inline float glidePitch = 0.0f;
 inline float hoverBlend = 0.0f; // 0 = grounded, 1 = hover
@@ -306,14 +305,14 @@ inline sead::Vector3f legScale = {1.0f, 1.0f, 1.0f};
 inline bool isEffect = false;
 inline sead::Vector3f isSpawnPos;
 
-inline sead::Vector3f setupHitEffect(al::HitSensor* a, al::HitSensor* b) {
+inline sead::Vector3f setupHitEffect(const al::HitSensor* a, const al::HitSensor* b) {
 	isEffect = false;
 	isSpawnPos = (al::getSensorPos(a) + al::getSensorPos(b)) * 0.5f;
 	isSpawnPos.y += 20.0f;
 	return isSpawnPos;
 }
 
-inline sead::Vector3f getFireDir(al::LiveActor* from, al::LiveActor* to) {
+inline sead::Vector3f getFireDir(const al::LiveActor* from, const al::LiveActor* to) {
 	sead::Vector3f dir = al::getTrans(to) - al::getTrans(from);
 	dir.normalize();
 	return dir;
@@ -327,7 +326,7 @@ inline void isHitEffect(al::LiveActor* thisPtr, al::LiveActor* targetHost, const
 	al::tryEmitEffect(thisPtr, effect ? effect : "Hit", &isSpawnPos);
 }
 
-inline bool isInHitBuffer(al::LiveActor* actor) {
+inline bool isInHitBuffer(const al::LiveActor* actor) {
 	for (int i = 0; i < hitBufferCount; i++) {
 		if (hitBuffer[i] == actor) return true;
 	}
@@ -335,7 +334,7 @@ inline bool isInHitBuffer(al::LiveActor* actor) {
 }
 
 // Guard Mario against attacks
-inline bool isValidAttackTarget(al::HitSensor* target) {
+inline bool isValidAttackTarget(const al::HitSensor* target) {
 	al::LiveActor* targetHost = al::getSensorHost(target);
 	return targetHost && !al::isSensorPlayerAll(target);
 }
@@ -360,7 +359,7 @@ inline void applyEdgeGuard(al::LiveActor* player) {
 }
 
 // Returns the nearest valid target within maxDist, skipping already-hit actors
-inline al::LiveActor* findNearestTarget(al::LiveActor* player, f32 maxDist) {
+inline al::LiveActor* findNearestTarget(const al::LiveActor* player, f32 maxDist) {
 	al::HitSensor* eye = al::getHitSensor(player, "Eye");
 	if (!eye) return nullptr;
 
@@ -418,7 +417,7 @@ enum class SpinPre { Fallthrough, Accept, Reject };
 //                   ANIMATION CHECKS
 // =========================================================
 
-inline bool isBaseSpinAnim(PlayerAnimator* anim) {
+inline bool isBaseSpinAnim(const PlayerAnimator* anim) {
 	return al::isEqualString(anim->mCurAnim, "SpinSeparate")
 		|| al::isEqualString(anim->mCurAnim, "SpinSeparateSwim")
 		|| al::isEqualString(anim->mCurAnim, "SpinLow")
@@ -428,19 +427,19 @@ inline bool isBaseSpinAnim(PlayerAnimator* anim) {
 		|| al::isEqualString(anim->mCurAnim, "SwingAirAttack");
 }
 
-inline bool isDoubleSpinAnim(PlayerAnimator* anim) {
+inline bool isDoubleSpinAnim(const PlayerAnimator* anim) {
 	return al::isEqualString(anim->mCurAnim, "SpinAttackLeft")
 		|| al::isEqualString(anim->mCurAnim, "SpinAttackRight")
 		|| al::isEqualString(anim->mCurAnim, "SpinAttackAirLeft")
 		|| al::isEqualString(anim->mCurAnim, "SpinAttackAirRight");
 }
 
-inline bool isSpinAnim(PlayerAnimator* anim) {
+inline bool isSpinAnim(const PlayerAnimator* anim) {
 	if (!anim) return false;
 	return isBaseSpinAnim(anim) || isDoubleSpinAnim(anim);
 }
 
-inline bool isPunchAnim(PlayerAnimator* anim) {
+inline bool isPunchAnim(const PlayerAnimator* anim) {
 	if (!anim) return false;
 	return al::isEqualString(anim->mCurAnim, "PunchL")
 		|| al::isEqualString(anim->mCurAnim, "PunchR")
@@ -448,7 +447,7 @@ inline bool isPunchAnim(PlayerAnimator* anim) {
 		|| al::isEqualString(anim->mCurAnim, "Kick");
 }
 
-inline bool isJumpPunchAnim(PlayerAnimator* anim) {
+inline bool isJumpPunchAnim(const PlayerAnimator* anim) {
 	if (!anim) return false;
 	return al::isEqualString(anim->mCurAnim, "JumpPunchEndL")
 		|| al::isEqualString(anim->mCurAnim, "JumpPunchEndR")
@@ -456,7 +455,7 @@ inline bool isJumpPunchAnim(PlayerAnimator* anim) {
 		|| al::isEqualString(anim->mCurAnim, "JumpPunchR");
 }
 
-inline bool isHipDropAnim(PlayerAnimator* anim) {
+inline bool isHipDropAnim(const PlayerAnimator* anim) {
 	if (!anim) return false;
 	return al::isEqualString(anim->mCurAnim, "HipDrop")
 		|| al::isEqualString(anim->mCurAnim, "HipDropPunch")
@@ -469,7 +468,7 @@ inline bool isHipDropAnim(PlayerAnimator* anim) {
 		|| al::isEqualString(anim->mCurAnim, "SwimDive");
 }
 
-inline bool isDrillAnim(PlayerAnimator* anim) {
+inline bool isDrillAnim(const PlayerAnimator* anim) {
 	if (drillSensorRemaining > 0) return true;
 	if (!anim) return false;
 	return anim->isSubAnim("DrillIn")

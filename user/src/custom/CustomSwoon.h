@@ -1,5 +1,5 @@
 #pragma once
-#include "custom/_Globals.h"
+#include "custom/.Globals.h"
 
 // Handle stacked enemies
 inline bool handleStacked(al::LiveActor*& actor, al::HitSensor* target, al::HitSensor* source) {
@@ -30,7 +30,7 @@ inline bool handleStacked(al::LiveActor*& actor, al::HitSensor* target, al::HitS
 }
 
 // Send Cap messages to all sensors on the actor
-inline bool trySendCapMsg(al::LiveActor* actor, al::HitSensor* source) {
+inline bool trySendCapMsg(const al::LiveActor* actor, al::HitSensor* source) {
 	al::HitSensorKeeper* keeper = actor->getHitSensorKeeper();
 	if (!keeper) return false;
 	for (s32 i = 0; i < keeper->getSensorNum(); i++) {

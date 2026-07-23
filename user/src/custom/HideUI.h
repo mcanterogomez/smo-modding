@@ -1,5 +1,5 @@
 #pragma once
-#include "custom/_Globals.h"
+#include "custom/.Globals.h"
 #include "Library/Play/Layout/SimpleLayoutAppearWaitEnd.h"
 
 struct CounterLifeCtrl;
@@ -21,8 +21,8 @@ extern "C" {
 }
 
 namespace HideUI {
-    static bool isHide = false;
-    static bool isPending = false;
+    inline bool isHide = false;
+    inline bool isPending = false;
 
     template <typename T>
     inline T* memberAt(void* base, ptrdiff_t offset) { return *reinterpret_cast<T**>(reinterpret_cast<u8*>(base) + offset); }

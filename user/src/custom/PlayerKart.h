@@ -1,5 +1,5 @@
 #pragma once
-#include "custom/_Globals.h"
+#include "custom/.Globals.h"
 
 inline void isKartReset() {
     isAntiGravity = false;
@@ -9,7 +9,7 @@ inline void isKartReset() {
     rs::resetCollision(static_cast<IUsePlayerCollision*>(isKart));
 }
 
-inline bool isKartSubmerged(Motorcycle* kart) {
+inline bool isKartSubmerged(const Motorcycle* kart) {
     if (!al::isInWater(kart)) return false;
     sead::Vector3f surfacePos, surfaceNormal;
     return !al::calcFindWaterSurface(&surfacePos, &surfaceNormal, kart, al::getTrans(kart), sead::Vector3f::ey, 75.0f);
@@ -69,7 +69,7 @@ namespace PlayerKart {
             return;
         }
 
-        const f32 maxStep = 500.0f;	// tallest ledge the kart will spawn on
+        float maxStep = 500.0f;	// tallest ledge the kart will spawn on
 
         sead::Vector3f front;
         al::calcFrontDir(&front, thisPtr);
@@ -145,8 +145,8 @@ namespace PlayerKart {
             auto* kart = static_cast<Motorcycle*>(actor);
 
             // Lean: none on the ground, half while hovering, eased by hoverBlend between them
-            const float groundLean = 0.0f;
-            const float hoverLean = 0.75f;
+            float groundLean = 0.0f;
+            float hoverLean = 0.75f;
 
             float savedLean = kart->mLean;
             kart->mLean *= al::lerpValue(groundLean, hoverLean, hoverBlend);

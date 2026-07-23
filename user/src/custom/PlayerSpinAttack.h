@@ -1,7 +1,7 @@
 #pragma once
 #include "ModConfig.h"
-#include "custom/_Globals.h"
-#include "custom/_Nerves.h"
+#include "custom/.Globals.h"
+#include "custom/.Nerves.h"
 
 namespace PlayerSpinAttack {
 
@@ -72,8 +72,8 @@ namespace PlayerSpinAttack {
 
     struct PlayerSpinCapAttackAppear : public mallow::hook::Trampoline<PlayerSpinCapAttackAppear> {
         static void Callback(PlayerStateSpinCap* state) {
-            const bool isGrounded = rs::isOnGround(state->mActor, state->mCollider) && !state->mTrigger->isOn(PlayerTrigger::EActionTrigger_val2);
-            const bool forcedGroundSpin = state->mTrigger->isOn(PlayerTrigger::EActionTrigger_val33);
+            bool isGrounded = rs::isOnGround(state->mActor, state->mCollider) && !state->mTrigger->isOn(PlayerTrigger::EActionTrigger_val2);
+            bool forcedGroundSpin = state->mTrigger->isOn(PlayerTrigger::EActionTrigger_val33);
 
             // Safety fix: clear leftover fakethrow state from area load mid-spin
             if (spin.fakethrowRemainder != -1
@@ -295,7 +295,7 @@ namespace PlayerSpinAttack {
         }
     };
 
-    void tryCapSpinAndRethrow(PlayerActorHakoniwa* player, bool a2) {
+    static void tryCapSpinAndRethrow(PlayerActorHakoniwa* player, bool a2) {
         if (isJumpPunchAnim(player->mAnimator)) spin.canGalaxy = true;
 
         isSpinRethrow = true;

@@ -1,6 +1,6 @@
 #pragma once
 #include "ModConfig.h"
-#include "custom/_Globals.h"
+#include "custom/.Globals.h"
 
 // Handle lunging
 inline void applyLunge(PlayerActorHakoniwa* player, float launchFrame, float speed) {
@@ -473,8 +473,8 @@ private:
     }
 };
 
-PlayerStateSpinCapNrvGalaxySpinGround GalaxySpinGround;
-PlayerStateSpinCapNrvGalaxySpinAir GalaxySpinAir;
-PlayerActorHakoniwaNrvTauntLeft TauntLeftNrv;
-PlayerActorHakoniwaNrvTauntRight TauntRightNrv;
-PlayerActorHakoniwaNrvHammer HammerNrv;
+inline PlayerStateSpinCapNrvGalaxySpinGround GalaxySpinGround;
+inline PlayerStateSpinCapNrvGalaxySpinAir GalaxySpinAir;
+inline PlayerActorHakoniwaNrvTauntLeft TauntLeftNrv;
+inline PlayerActorHakoniwaNrvTauntRight TauntRightNrv;
+inline PlayerActorHakoniwaNrvHammer HammerNrv;

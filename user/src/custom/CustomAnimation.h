@@ -1,6 +1,6 @@
 #pragma once
 #include "ModConfig.h"
-#include "custom/_Globals.h"
+#include "custom/.Globals.h"
 
 inline bool isDefinitve() {
     static bool value = al::isExistFile("ObjectData/MarioDefinitve.txt");
@@ -15,7 +15,7 @@ inline bool isTempWait() {
 
 namespace CustomAnimation {
 
-    inline const char* remapAnim(const char* name, PlayerAnimator* anim = nullptr) {
+    inline const char* remapAnim(const char* name, const PlayerAnimator* anim = nullptr) {
         if (!isHakoniwa || (anim && anim != isHakoniwa->mAnimator)
             || rs::isPlayer2D(isHakoniwa)) return nullptr;
 
@@ -84,24 +84,29 @@ namespace CustomAnimation {
         return nullptr;
     }
 
-    // Which idle-cycle anim the current suit uses, or nullptr if none — add new suits here
-    inline const char* idleCycleAnim(bool alt, PlayerAnimator* anim = nullptr) {
+    inline int idlePlayed = 0;
+    // Idle-cycle anim for the current suit, or nullptr when spent — add new suits here
+    inline const char* idleCycleAnim(bool alt, const PlayerAnimator* anim = nullptr) {
         if (!isHakoniwa || (anim && anim != isHakoniwa->mAnimator)) return nullptr;
-        if (isDefinitve()) return alt ? "AreaWaitView" : "AreaWaitStretch";
-        //if (isBrawl) return alt ? "AreaWaitView" : "AreaWaitStretch"; // only one anim, ignores alt
+        if (isMario && isDefinitve()) return idlePlayed <= 2 ? (alt ? "AreaWaitView" : "AreaWaitStretch") : nullptr; // waits 1-4 play anims, wait 5 holds then relax
+        //if (isBrawl) return alt ? "AreaWaitView" : "AreaWaitStretch"; // no cap: loops forever
         return nullptr;
     }
-
-    // Every 720 idle frames, swaps Wait to the suit's cycle anim and back, flipping alt each time
+    // Every 720 idle frames, swaps Wait to the suit's cycle anim and back
     inline void updateIdleCycle(PlayerActorHakoniwa* thisPtr) {
         static int idleCycle = 0;
         static bool alt = false;
-        const char* altAnim = idleCycleAnim(alt);
-        if (!altAnim || isTempWait() || !al::isNerve(thisPtr, getNerveAt(nrvHakoniwaWait))) { idleCycle = 0; return; }
+        if (isTempWait() || !al::isNerve(thisPtr, getNerveAt(nrvHakoniwaWait))) { idleCycle = 0; idlePlayed = 0; alt = false; return; }
 
         if (idleCycle >= 0) {
-            if (++idleCycle >= 720) { thisPtr->mAnimator->startAnim(altAnim); idleCycle = -1; }
-        } else if (thisPtr->mAnimator->isAnimEnd()) { thisPtr->mAnimator->startAnim("Wait"); idleCycle = 0; alt = !alt; }
+            if (++idleCycle < 720) return;
+            idlePlayed++;
+            const char* altAnim = idleCycleAnim(alt);
+            if (!altAnim) return;
+            thisPtr->mAnimator->startAnim(altAnim);
+            idleCycle = -1;
+            alt = !alt;
+        } else if (thisPtr->mAnimator->isAnimEnd()) { thisPtr->mAnimator->startAnim("Wait"); idleCycle = 0; }
     }
 
     // Intercepts startAnim, remaps to suit-specific names

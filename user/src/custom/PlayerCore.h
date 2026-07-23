@@ -1,7 +1,7 @@
 #pragma once
 #include "ModConfig.h"
-#include "custom/_Globals.h"
-#include "custom/_Nerves.h"
+#include "custom/.Globals.h"
+#include "custom/.Nerves.h"
 #include "custom/CustomAnimation.h"
 #include "custom/PowerUps.h"
 #include "custom/PlayerFreeze.h"
@@ -10,6 +10,8 @@ inline bool detectIsMario(const char* costume, const char* cap) {
     return (costume && al::isEqualString(costume, "Mario"))
         && (cap && al::isEqualString(cap, "Mario"));
 }
+
+struct PlayerAnimControlRun { PlayerAnimator* mAnimator; };
 namespace PlayerCore {
 
     struct PlayerActorHakoniwaInitPlayer : public mallow::hook::Trampoline<PlayerActorHakoniwaInitPlayer> {
@@ -212,26 +214,17 @@ namespace PlayerCore {
                     al::LiveActor* actor = al::getSensorHost(other);
 
                     if (!actor) continue;
+
                     if (al::isEqualSubString(typeid(*actor).name(), "Radish")
                         || al::isEqualSubString(typeid(*actor).name(), "BossRaidRivet")
-                        || al::isEqualSubString(typeid(*actor).name(), "Stake")
-                    ) {
-                        isNearCollectible = true;
-                        break;
-                    }
+                        || al::isEqualSubString(typeid(*actor).name(), "Stake")) { isNearCollectible = true; break;}
+
                     if (al::isEqualSubString(typeid(*actor).name(), "TreasureBox")
-                        && !al::isModelName(actor, "TreasureBoxWood")
-                    ) {
-                        isNearTreasure = true;
-                        break;
-                    }
+                        && !al::isModelName(actor, "TreasureBoxWood")) { isNearTreasure = true; break; }
+
                     if (al::isSensorEnemyBody(other)
                         && (al::isActionPlaying(actor, "SwoonStart") || al::isActionPlaying(actor, "SwoonStartLand")
-                            || al::isActionPlaying(actor, "SwoonLoop") || al::isActionPlaying(actor, "Swoon"))
-                    ) {
-                        isNearSwoonedEnemy = true;
-                        break;
-                    }
+                            || al::isActionPlaying(actor, "SwoonLoop") || al::isActionPlaying(actor, "Swoon"))) { isNearSwoonedEnemy = true; break; }
                 }
             }
 
@@ -282,7 +275,7 @@ namespace PlayerCore {
 
     struct PlayerActorHakoniwaReceiveMsgHook : public mallow::hook::Trampoline<PlayerActorHakoniwaReceiveMsgHook> {
         static bool Callback(PlayerActorHakoniwa* thisPtr, const al::SensorMsg* msg, al::HitSensor* source, al::HitSensor* target) {
-            if (drillStep != WallStick::Idle || drillSensorRemaining > 0) return false;
+            if (drillStep != PlayerDrill::Idle || drillSensorRemaining > 0) return false;
             if (PlayerFreeze::handleReceiveMsg(msg, source)) return false;
 
             bool isDamage = rs::isMsgPlayerDamage(msg)
@@ -294,7 +287,7 @@ namespace PlayerCore {
 
             if (isDamage) {
                 auto* anim = thisPtr->mAnimator;
-                const float frame = anim->getAnimFrame();
+                float frame = anim->getAnimFrame();
 
                 if ((al::isEqualSubString(anim->mCurAnim, "Punch")  && frame <= 6.0f) || (al::isEqualSubString(anim->mCurAnim, "JumpPunch") && frame <= 17.0f)) return false;
                 if (isHipDropAnim(anim) || isMetal || isSuper) return false;

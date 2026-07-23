@@ -1,12 +1,12 @@
 #pragma once
-#include "custom/_Globals.h"
-#include "custom/_Nerves.h"
+#include "custom/.Globals.h"
+#include "custom/.Nerves.h"
 #include "custom/CustomSwoon.h"
 #include "custom/PlayerFreeze.h"
 #include "headers/PlayerIceCube.h"
 
 // Check if HitImpact should play for this target/sensor pair
-inline bool isHitImpact(al::LiveActor* targetHost, al::HitSensor* target) {
+inline bool isHitImpact(const al::LiveActor* targetHost, const al::HitSensor* target) {
 	if (isAnyType(targetHost, "CapRack")) return true;
 	if (isAnyType(targetHost, "Gunetter")) return false;
 	if (hasSensor(targetHost, al::isSensorMapObj)) return hasSensor(targetHost, al::isSensorCollision) && !hasSensor(targetHost, al::isSensorEnemyAttack);

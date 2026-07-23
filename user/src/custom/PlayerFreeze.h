@@ -1,6 +1,6 @@
 #pragma once
 
-#include "custom/_Globals.h"
+#include "custom/.Globals.h"
 #include "headers/PlayerIceCube.h"
 #include "Library/Collision/CollisionParts.h"
 #include "Library/Collision/CollisionPartsTriangle.h"
@@ -22,16 +22,16 @@ namespace PlayerFreeze {
 
     inline void clearAllFrozen() { sFrozenCount = 0; }
 
-    inline FrozenEntry* findEntry(al::LiveActor* actor) {
+    inline FrozenEntry* findEntry(const al::LiveActor* actor) {
         for (s32 i = 0; i < sFrozenCount; i++)
             if (sFrozenList[i].actor == actor) return &sFrozenList[i];
         return nullptr;
     }
 
-    inline bool isFrozen(al::LiveActor* actor) { return actor && findEntry(actor); }
+    inline bool isFrozen(const al::LiveActor* actor) { return actor && findEntry(actor); }
 
     // Raycast down from actor to find what platform it's standing on
-    inline const al::CollisionParts* findFloorParts(al::LiveActor* actor, sead::Vector3f* outFloorPos) {
+    inline const al::CollisionParts* findFloorParts(const al::LiveActor* actor, sead::Vector3f* outFloorPos) {
         sead::Vector3f gravity = al::getGravity(actor);
         sead::Vector3f rayStart = al::getTrans(actor) - gravity;
         sead::Vector3f rayDir = gravity * 500.0f;

@@ -1,10 +1,10 @@
+#include "custom/CustomAnimation.h"
 #include "custom/KoopaBattle.h"
 #include "custom/PowerUps.h"
-
-#include "custom/AttackSensor.h"
-#include "custom/CustomAnimation.h"
-#include "custom/PlayerSpinAttack.h"
 #include "custom/PlayerCore.h"
+#include "custom/PlayerSpinAttack.h"
+#include "custom/PlayerSneak.h"
+#include "custom/AttackSensor.h"
 
 struct TriggerCameraReset : public mallow::hook::Trampoline<TriggerCameraReset> {
     static bool Callback(al::LiveActor* actor, int port) {
@@ -40,6 +40,7 @@ extern "C" void userMain() {
     AppRun::InstallAtSymbol("_ZN11Application3runEv");
     PlayerCore::Install();
     PlayerSpinAttack::Install();
+    PlayerSneak::Install();
     AttackSensor::Install();
     CustomAnimation::Install();
     KoopaBattle::Install();

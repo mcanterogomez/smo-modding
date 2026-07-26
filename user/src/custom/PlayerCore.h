@@ -11,7 +11,6 @@ inline bool detectIsMario(const char* costume, const char* cap) {
         && (cap && al::isEqualString(cap, "Mario"));
 }
 
-struct PlayerAnimControlRun { PlayerAnimator* mAnimator; };
 namespace PlayerCore {
 
     struct PlayerActorHakoniwaInitPlayer : public mallow::hook::Trampoline<PlayerActorHakoniwaInitPlayer> {
@@ -69,11 +68,11 @@ namespace PlayerCore {
     struct PlayerMovementHook : public mallow::hook::Trampoline<PlayerMovementHook> {
         static void Callback(PlayerActorHakoniwa* thisPtr) {
             Orig(thisPtr);
+            auto* model  = thisPtr->mModelHolder->findModelActor("Normal");
 
             #ifdef ALLOW_POWERUPS
                 PowerUps::executeMovement(thisPtr);
             #endif
-            auto* model  = thisPtr->mModelHolder->findModelActor("Normal");
 
             // Handle idle animation cycle
             CustomAnimation::updateIdleCycle(thisPtr);
@@ -337,8 +336,7 @@ namespace PlayerCore {
         // Handles control/movement
         PlayerMovementHook::InstallAtSymbol("_ZN19PlayerActorHakoniwa8movementEv");
         PlayerActorHakoniwaReceiveMsgHook::InstallAtSymbol("_ZN19PlayerActorHakoniwa10receiveMsgEPKN2al9SensorMsgEPNS0_9HitSensorES5_");
-        // Handles effect logic
-        EndSubAnimGuard::InstallAtSymbol("_ZN14PlayerAnimator10endSubAnimEv");
+        // Handles effects
         EmitEmittersHook::InstallAtSymbol("_ZN2al6Effect15tryEmitEmittersEPKN4sead7Vector3IfEEb");
         EffectHitReactionLimitHook::InstallAtOffset(0xA5B938);
     }

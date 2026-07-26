@@ -244,6 +244,7 @@ inline bool isAntiGravity = false;
 inline bool isNearCollectible = false;
 inline bool isNearTreasure = false;
 inline bool isNearSwoonedEnemy = false;
+inline bool isSneaking = false;
 
 // =========================================================
 //                       ACTORS

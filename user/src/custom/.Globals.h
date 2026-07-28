@@ -381,7 +381,7 @@ inline al::LiveActor* findNearestTarget(const al::LiveActor* player, f32 maxDist
 }
 
 // =========================================================
-//                      SPIN STATE
+//                      CUSTOM STATES
 // =========================================================
 
 struct SpinState {
@@ -413,6 +413,11 @@ struct SpinState {
 
 inline SpinState spin;
 enum class SpinPre { Fallthrough, Accept, Reject };
+
+// Handle Guard state
+namespace PlayerGuard { enum : int { Idle = -1, Blocked = 0, Active = 1 }; }
+inline int guardStep = PlayerGuard::Idle;
+inline int guardWindow = 0; // frames left to parry
 
 // =========================================================
 //                   ANIMATION CHECKS

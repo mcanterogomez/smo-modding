@@ -675,8 +675,5 @@ namespace PowerUps {
         invincibleStartPatcher.WriteInst(0x1F2003D5); // NOP
         exl::patch::CodePatcher invinciblePatcher(0x43F4A8);
         invinciblePatcher.WriteInst(0x1F2003D5); // NOP
-
-        // Install Wall Stick hooks
-        PlayerDrill::Install();
     }
 }

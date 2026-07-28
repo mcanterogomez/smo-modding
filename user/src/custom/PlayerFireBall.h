@@ -81,7 +81,7 @@ namespace PlayerFireBall {
             fireStep = -1;
             restoreEyeRadius();
             anim->clearUpperBodyAnim();
-            al::setNerve(thisPtr, getNerveAt((!onGround || isMove) ? nrvHakoniwaFall : nrvHakoniwaWait));
+            al::setNerve(thisPtr, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
         }
         else fireStep++;
     }

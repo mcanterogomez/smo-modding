@@ -46,9 +46,7 @@ namespace KoopaBattle {
 			al::tryStartSe(mario, "DamageHit");
 			auto* spinCap = *reinterpret_cast<PlayerStateSpinCap**>(reinterpret_cast<uintptr_t>(mario) + 0x300);
 			al::setNerve(spinCap, getNerveAt(nrvSpinCapFall));
-			sead::Vector3f away = al::getTrans(mario) - al::getTrans(bowser);
-			al::tryNormalizeOrZero(&away);
-			al::setVelocity(mario, away * (mario->mInput->isMove() ? 25.0f : 15.0f) - al::getGravity(mario) * 20.0f);
+			al::setVelocityBlowAttackAndTurnToTarget(mario, al::getTrans(bowser), mario->mInput->isMove() ? 25.0f : 15.0f, 20.0f);
 		}
 
 		hitBuffer[hitBufferCount++] = bowser;

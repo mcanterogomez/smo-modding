@@ -134,7 +134,7 @@ namespace PlayerDrill {
 
             // DrillOut anim playing. When done, return to Fall if airborne/moving, else Wait.
             case Exit: {
-                al::setNerve(thisPtr, getNerveAt((!onGround || isMove) ? nrvHakoniwaFall : nrvHakoniwaWait));
+                al::setNerve(thisPtr, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
                 drillStep = Idle;
                 break;
             }
@@ -201,16 +201,4 @@ namespace PlayerDrill {
         }
     }
 
-    struct PlayerJudgeStartSquatHook : public mallow::hook::Trampoline<PlayerJudgeStartSquatHook> {
-        static bool Callback(void* thisPtr) {
-            if (isDrill && isHakoniwa->mHackCap->isPutOn()
-                && al::isPadHoldZR(-1)) return false;
-
-            return Orig(thisPtr);
-        }
-    };
-
-    inline void Install() {
-        PlayerJudgeStartSquatHook::InstallAtSymbol("_ZNK21PlayerJudgeStartSquat5judgeEv");
-    }
-}
+}  // namespace PlayerDrill

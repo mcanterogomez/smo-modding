@@ -96,7 +96,7 @@ namespace AttackSensor {
                     hitBuffer[hitBufferCount++] = targetHost;
                     if (targetHost == isNearTarget && thisPtr->mAnimator->isAnim("RabbitGet")
                     ) {
-                        if (isRivet) { al::invalidateCollisionParts(targetHost); al::setVelocity(targetHost, al::getGravity(targetHost) * -44.0f); }
+                        if (isRivet) { al::invalidateCollisionParts(targetHost); al::setVelocityBlowAttack(targetHost, al::getTrans(thisPtr), 0.0f, 44.0f); }
                         al::setNerve(targetHost, isStake ? getNerveAt(0x1D36D30) : isRadish ? getNerveAt(0x1D22BD8) : getNerveAt(0x1C5F338));
                         isHitEffect(thisPtr, targetHost);
                         isNearCollectible = false;
@@ -120,7 +120,7 @@ namespace AttackSensor {
                         if (trySwoon(targetHost, false)) trySwoon(targetHost);
                         handleStacked(targetHost, target, source);
                         if (!isHit && al::isCollidedGround(targetHost)
-                            && al::isExistAction(targetHost, "Walk")) al::addVelocity(targetHost, fireDir * 12.5f - al::getGravity(targetHost) * 25.0f);
+                            && al::isExistAction(targetHost, "Walk")) al::setVelocityBlowAttack(targetHost, al::getTrans(thisPtr), 12.5f, 25.0f);
                         hitBuffer[hitBufferCount++] = targetHost;
                         isHitEffect(thisPtr, targetHost);
                         return;
@@ -148,7 +148,10 @@ namespace AttackSensor {
                 ) {
                     hitBuffer[hitBufferCount++] = targetHost;
                     if (isHitImpact(targetHost, target)) al::tryStartSe(thisPtr, "HitImpact");
-                    if (al::isExistAction(targetHost, "BlowDown")) al::addVelocity(targetHost, fireDir * 25.0f);
+                    if (al::isExistAction(targetHost, "BlowDown")) {
+                        bool isJumpPunch = isJumpPunchAnim(thisPtr->mAnimator);
+                        al::setVelocityBlowAttack(targetHost, al::getTrans(thisPtr), isJumpPunch ? 25.0f : 50.0f, isJumpPunch ? 50.0f : 25.0f);
+                    }
                     return;
                 }
             }

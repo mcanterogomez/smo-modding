@@ -383,7 +383,7 @@ public:
         auto* player = keeper->getParent<PlayerActorHakoniwa>();
         auto* model = player->mModelHolder->findModelActor("Normal");
         auto* hammer = al::tryGetSubActor(model, "Hammer");
-        bool isGround = rs::isOnGround(player, player->mCollider);
+        bool onGround = rs::isOnGround(player, player->mCollider);
 
         if (al::isFirstStep(player)) {
             player->mAnimator->endSubAnim();
@@ -402,7 +402,7 @@ public:
             al::invalidateClipping(isHammer);
             al::showShadow(isHammer);
 
-            if (isGround) player->mAnimator->startAnim("HammerAttack");
+            if (onGround) player->mAnimator->startAnim("HammerAttack");
             else {
                 player->mAnimator->startAnim("RollingStart");
                 al::validateHitSensor(isHammer, "AttackHack");
@@ -410,7 +410,7 @@ public:
         }
 
         // Air physics + spin transition
-        if (!isGround) {
+        if (!onGround) {
             al::addVelocity(player, al::getGravity(player) * 0.5f);
 
             if (player->mAnimator->isAnim("RollingStart") && player->mAnimator->isAnimEnd()) {
@@ -420,7 +420,7 @@ public:
         }
 
         // Air -> Ground transition
-        if (isGround && (player->mAnimator->isAnim("RollingStart") || player->mAnimator->isAnim("Rolling"))) {
+        if (onGround && (player->mAnimator->isAnim("RollingStart") || player->mAnimator->isAnim("Rolling"))) {
             player->mAnimator->endSubAnim();
             player->mAnimator->startAnim("HammerAttack");
             al::tryStartAction(isHammer, "Wait");
@@ -453,7 +453,7 @@ public:
 
         if (player->mAnimator->isAnimEnd()) {
             cleanup(hammer);
-            al::setNerve(player, getNerveAt(nrvHakoniwaFall));
+            al::setNerve(player, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
             return;
         }
 

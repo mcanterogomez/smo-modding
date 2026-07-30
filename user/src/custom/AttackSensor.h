@@ -191,9 +191,9 @@ namespace AttackSensor {
                     return;
                 } else if (isBlock) return;
             }
-            if (al::sendMsgPlayerHipDrop(target, source, nullptr) || al::sendMsgPlayerObjHipDrop(target, source, nullptr)
+            if (rs::sendMsgHackAttack(target, source) || al::sendMsgPlayerSpinAttack(target, source, nullptr)
+                || al::sendMsgPlayerHipDrop(target, source, nullptr) || al::sendMsgPlayerObjHipDrop(target, source, nullptr)
                 || al::sendMsgPlayerObjHipDropReflect(target, source, nullptr) || rs::sendMsgPlayerHipDropHipDropSwitch(target, source)
-                || rs::sendMsgHackAttack(target, source) || al::sendMsgPlayerSpinAttack(target, source, nullptr)
                 || rs::sendMsgCapReflect(target, source) || rs::sendMsgCapReflectCollide(target, source)
                 || rs::sendMsgCapAttack(target, source) || rs::sendMsgCapAttackCollide(target, source)
                 || rs::sendMsgByugoBlow(target, source, sead::Vector3f::zero)

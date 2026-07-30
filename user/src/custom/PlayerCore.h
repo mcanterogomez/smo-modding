@@ -68,6 +68,7 @@ namespace PlayerCore {
     struct PlayerMovementHook : public mallow::hook::Trampoline<PlayerMovementHook> {
         static void Callback(PlayerActorHakoniwa* thisPtr) {
             Orig(thisPtr);
+            auto* anim = thisPtr->mAnimator;
             auto* model  = thisPtr->mModelHolder->findModelActor("Normal");
             bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
             bool isMove = thisPtr->mInput->isMove();
@@ -129,7 +130,7 @@ namespace PlayerCore {
             if (attackSensorRemaining > 0) {
                 attackSensorRemaining--;
 
-                bool animEnded = thisPtr->mAnimator->isAnimEnd();
+                bool animEnded = anim->isAnimEnd();
                 if (attackSensorRemaining == 0 || animEnded
                 ) {
                     for (const char* name : attackSensorNames) al::invalidateHitSensor(thisPtr, name);
@@ -159,14 +160,14 @@ namespace PlayerCore {
 
             if (activeSensor && attackFrames >= 2
                 && wallHit && hitBufferCount == 0
-                && !isDrillAnim(thisPtr->mAnimator)
+                && !isDrillAnim(anim)
             ) {
                 sead::Vector3f wallPos = isHammerWall ? al::getCollidedWallPos(isHammer) : rs::getCollidedWallPos(thisPtr->mCollider);
 
                 if (isHammerActive) {
                     al::tryEmitEffect(isHammer, "Break", &wallPos);
                     al::tryStartSe(isHammer, "Hit");
-                    al::setNerve(thisPtr, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
+                    al::setNerve(thisPtr, getNerveAt(nrvHakoniwaFall));
                 } else {
                     auto* spinCap = *reinterpret_cast<PlayerStateSpinCap**>(reinterpret_cast<uintptr_t>(thisPtr) + 0x300);
                     al::setNerve(spinCap, getNerveAt(nrvSpinCapFall));
@@ -178,26 +179,30 @@ namespace PlayerCore {
                 attackFrames = 0;
             }
 
-            // Push wind-blow map parts while doing the wall-push animation or attacking
-            static bool wasPushing = false;
-            al::HitSensor* wallSensor = isHammerWall ? al::tryGetCollidedWallSensor(isHammer) : rs::tryGetCollidedWallSensor(thisPtr->mCollider);
-            if (wallSensor && isType(al::getSensorHost(wallSensor), "WindBlowMapParts")
-            ) {
-                sead::Vector3f front;
-                al::calcFrontDir(&front, thisPtr);
-                if (thisPtr->mAnimator->isAnim("Push")) rs::sendMsgByugoBlow(wallSensor, wallSensor, front * 1.0f);
-                else if (activeSensor) {
-                    float pushForce = (al::getSensorHost(activeSensor) == isHammer) ? 150.0f : 50.0f;
-                    rs::sendMsgByugoBlow(wallSensor, wallSensor, front * pushForce);
-                    if (!wasPushing) {
-                        sead::Vector3f hitPos = isHammerWall ? al::getCollidedWallPos(isHammer) : rs::getCollidedWallPos(thisPtr->mCollider);
-                        al::tryEmitEffect(thisPtr, "HitSmall", &hitPos);
-                        al::tryStartSe(thisPtr, "HitImpact");
-                        wasPushing = true;
-                    }
-                }
-            }
-            if (!activeSensor) wasPushing = false;
+            // Push wind-blow map parts along their rail, away from whatever hit them
+			constexpr float pushSpeed = 1.0f; // rail units/frame while pushing
+			static bool wasPushing = false;
+			al::HitSensor* wallSensor = isHammerWall ? al::tryGetCollidedWallSensor(isHammer) : rs::tryGetCollidedWallSensor(thisPtr->mCollider);
+
+			if (wallSensor && isType(al::getSensorHost(wallSensor), "WindBlowMapParts")
+			) {
+				al::LiveActor* part = al::getSensorHost(wallSensor);
+				al::LiveActor* pusher = isHammerWall ? static_cast<al::LiveActor*>(isHammer) : thisPtr;
+				float dir = al::sign(al::getRailDir(part).dot(al::getTrans(part) - al::getTrans(pusher)));
+
+				if (anim->isAnim("Push")) al::setSyncRailToCoord(part, al::getRailCoord(part) + dir * pushSpeed);
+				else if (activeSensor) {
+					float pushForce = (al::getSensorHost(activeSensor) == isHammer) ? 150.0f : 50.0f;
+					rs::sendMsgByugoBlow(wallSensor, wallSensor, al::getRailDir(part) * (dir * pushForce));
+					if (!wasPushing) {
+						sead::Vector3f hitPos = isHammerWall ? al::getCollidedWallPos(isHammer) : rs::getCollidedWallPos(thisPtr->mCollider);
+						al::tryEmitEffect(thisPtr, "HitSmall", &hitPos);
+						al::tryStartSe(thisPtr, "HitImpact");
+						wasPushing = true;
+					}
+				}
+			}
+			if (!activeSensor) wasPushing = false;
 
             // Reset proximity flag
             isNearCollectible = false;
@@ -229,7 +234,7 @@ namespace PlayerCore {
 
             // Add attack to hipdrop
             static bool wasAttackMove = false;
-            updateAttackSensor(thisPtr, "HipDropKnockDown", isHipDropAnim(thisPtr->mAnimator), wasAttackMove);
+            updateAttackSensor(thisPtr, "HipDropKnockDown", isHipDropAnim(anim), wasAttackMove);
 
             // Change face animations
             al::LiveActor* face = al::tryGetSubActor(model, "顔");
@@ -240,7 +245,7 @@ namespace PlayerCore {
                 if (isWater && (!al::isEqualSubString(actionName, "Swim") || al::isEqualSubString(actionName, "Spin")))
                     al::startActionSubActor(model, "顔", "SwimStand");
 
-                if ((thisPtr->mAnimator->isAnim("BattleWait") || isBrawl || isSuper) && !al::isActionPlayingSubActor(model, "顔", "WaitAngry"))
+                if ((anim->isAnim("BattleWait") || isBrawl || isSuper) && !al::isActionPlayingSubActor(model, "顔", "WaitAngry"))
                     al::startActionSubActor(model, "顔", "WaitAngry");
 
                 if (isMetal && !al::isActionPlayingSubActor(model, "顔", "AreaWaitFight"))
@@ -250,12 +255,14 @@ namespace PlayerCore {
             // Handle guard attacks
             switch (guardStep) {
                 case PlayerGuard::Idle: {
-                    if ((isMario || isBrawl) && (al::isPadTriggerZL(-1) || al::isPadTriggerZR(-1))) guardWindow = 5;
+                    if ((isMario || isBrawl)
+                        && ((al::isPadTriggerZL(-1) && al::isPadHoldZR(-1)) || (al::isPadTriggerZR(-1) && al::isPadHoldZL(-1)))) guardWindow = 5;
                     else if (guardWindow > 0) guardWindow--;
                     break;
                 }
                 case PlayerGuard::Blocked: {
-                    thisPtr->mAnimator->startSubAnim("HitGuard");
+                    anim->startUpperBodyAnim("HitGuard"); // upper body: keep falling/moving
+                    if (onGround) anim->startAnim("HitGuard"); // standing: full body
                     al::tryEmitEffect(thisPtr, "HitGuard", nullptr);
                     al::tryStartSe(thisPtr, "HitGuard");
                     guardWindow = 0;
@@ -263,8 +270,10 @@ namespace PlayerCore {
                     break;
                 }
                 case PlayerGuard::Active: {
-                    auto* anim = thisPtr->mAnimator;
-                    if (!anim->isSubAnimPlaying() || anim->isSubAnimEnd()) {
+                    if (!anim->isUpperBodyAnim("HitGuard") && !anim->isAnim("HitGuard")) { guardStep = PlayerGuard::Idle; break; }
+
+                    if (onGround ? anim->isAnimEnd() : anim->isUpperBodyAnimEnd()) {
+                        anim->clearUpperBodyAnim();
                         al::setNerve(thisPtr, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
                         guardStep = PlayerGuard::Idle;
                     }
@@ -283,11 +292,7 @@ namespace PlayerCore {
                 }
                 if (al::isNerve(thisPtr, &TauntLeftNrv)
                 ) {
-                    if (thisPtr->mAnimator->isAnim("WearEnd")
-                    ) {
-                        al::tryStopSe(thisPtr, "WearEnd", -1, nullptr);
-                        al::tryStopSe(thisPtr, "WearEndSetCostume", -1, nullptr);
-                    }
+                    if (anim->isAnim("WearEnd")) { al::tryStopSe(thisPtr, "WearEnd", -1, nullptr); al::tryStopSe(thisPtr, "WearEndSetCostume", -1, nullptr); }
                 }
                 if (!al::isNerve(thisPtr, &TauntLeftNrv)
                     && !al::isNerve(thisPtr, &TauntRightNrv)) al::tryDeleteEffect(model, "BonfireSuper");
@@ -301,12 +306,9 @@ namespace PlayerCore {
                 || drillStep != PlayerDrill::Idle || drillSensorRemaining > 0
                 || PlayerFreeze::handleReceiveMsg(msg, source)) return false;
 
-            bool isDamage = rs::isMsgPlayerDamage(msg)
-                || al::isMsgHit(msg)
-                || al::isMsgHitStrong(msg)
-                || al::isMsgHitVeryStrong(msg)
-                || rs::isMsgPlayerDamageBlowDown(msg)
-                || al::isMsgExplosion(msg);
+            bool isDamage = rs::isMsgPlayerDamage(msg) || al::isMsgHit(msg)
+                || al::isMsgHitStrong(msg) || al::isMsgHitVeryStrong(msg)
+                || rs::isMsgPlayerDamageBlowDown(msg) || al::isMsgExplosion(msg);
 
             if (isDamage) {
                 auto* anim = thisPtr->mAnimator;

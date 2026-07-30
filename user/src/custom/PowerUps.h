@@ -316,8 +316,7 @@ namespace PowerUps {
                 || al::isActionPlaying(model, "MoveSuper");
 
             static bool wasDash = false;
-            bool isDashNow = al::isPadHoldR(-1)
-                && isMoving && !isActionBusy() && speedH >= dashBorder;
+            bool isDashNow = al::isPadHoldR(-1) && isMoving && !isActionBusy() && speedH >= dashBorder;
 
             if (isDashNow && !wasDash) {
                 const char* fx = isSuper ? "AccelSecond" : "Accel";

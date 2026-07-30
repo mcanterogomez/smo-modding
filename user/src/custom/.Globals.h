@@ -44,6 +44,7 @@
 #include "Library/Nerve/NerveUtil.h"
 #include "Library/Placement/PlacementFunction.h"
 #include "Library/Player/PlayerUtil.h"
+#include "Library/Rail/RailUtil.h"
 #include "Library/Se/SeFunction.h"
 #include "Library/Shadow/ActorShadowUtil.h"
 
@@ -281,8 +282,6 @@ inline int drillSensorRemaining = -1; // hitbox lingers N frames after drill pop
 inline int isCapeActive = -1;
 inline int isMarioActive = 0; // 0 = none, 1 = enabling, -1 = disabling
 
-inline bool isActionBusy() { return fireStep >= 0 || drillStep >= 0; }
-
 inline float glideLean = 0.0f;
 inline float glidePitch = 0.0f;
 inline float hoverBlend = 0.0f; // 0 = grounded, 1 = hover
@@ -418,6 +417,8 @@ enum class SpinPre { Fallthrough, Accept, Reject };
 namespace PlayerGuard { enum : int { Idle = -1, Blocked = 0, Active = 1 }; }
 inline int guardStep = PlayerGuard::Idle;
 inline int guardWindow = 0; // frames left to parry
+
+inline bool isActionBusy() { return guardStep >= 0 || fireStep >= 0 || drillStep >= 0; }
 
 // =========================================================
 //                   ANIMATION CHECKS

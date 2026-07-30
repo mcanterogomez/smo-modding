@@ -134,8 +134,12 @@ namespace PlayerDrill {
 
             // DrillOut anim playing. When done, return to Fall if airborne/moving, else Wait.
             case Exit: {
-                al::setNerve(thisPtr, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
-                drillStep = Idle;
+                if (!anim->isSubAnim("DrillOut") && !anim->isSubAnim("DrillOutFast")) { drillStep = Idle; break; }
+
+                if (anim->isSubAnimEnd()) {
+                    al::setNerve(thisPtr, getNerveAt((onGround && !isMove) ? nrvHakoniwaWait : nrvHakoniwaFall));
+                    drillStep = Idle;
+                }
                 break;
             }
         }

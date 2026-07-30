@@ -33,51 +33,45 @@ namespace PlayerFireBall {
     }
 
     inline void update(PlayerActorHakoniwa* thisPtr) {
+        // Idle and nothing can start: skip the actor/collision lookups below
+        if (fireStep < 0 && (!(isMario || isFire || isIce || isBrawl || isSuper) || !al::isPadTriggerR(-1))) { canAction = false; return; }
+
         auto* anim = thisPtr->mAnimator;
         auto* model = thisPtr->mModelHolder->findModelActor("Normal");
         auto* blaster = al::tryGetSubActor(model, "Blaster");
         auto* weapon = isKnight ? al::tryGetSubActor(model, "Axe") : blaster;
 
-        bool isMove = thisPtr->mInput->isMove();
-        bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
-        bool isWater = al::isInWater(thisPtr);
-        bool isSurface = thisPtr->mWaterSurfaceFinder->isFoundSurface();
         bool isBlast = isWeaponOn && weapon == blaster;
-
-        const char* jointName = isBlast ? "HandR" : (nextThrowLeft ? "HandL" : "HandR");
-        const char* fireAnim = isBlast ? "BlastShoot" : (nextThrowLeft ? "FireL" : "FireR");
-
         al::LiveActorGroup* pool = isBlast ? tankBullets : (isIce ? iceBalls : fireBalls);
         if (!pool) return;
 
-        int spawnFrame = isBlast ? 40 : 2;
-        bool isFullBody = (!isMove && onGround && (!isWater || isSurface));
+        bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
         auto restoreEyeRadius = [&]() { al::setSensorRadius(thisPtr, "Eye", 800.0f); }; // restore default
 
-        // Trigger: start the shot
+        // Trigger: start the shot (suit and R already confirmed by the idle gate)
         if (fireStep < 0
-            && (isMario || isFire || isIce || isBrawl || isSuper)
             && (canAction || al::isActionPlaying(model, "GlideFloat") || al::isActionPlaying(model, "GlideFloatSuper"))
-            && al::isPadTriggerR(-1)
         ) {
             auto* projectile = pool->getDeadActor();
             if (projectile && al::isDead(projectile)) {
+                const char* fireAnim = isBlast ? "BlastShoot" : (nextThrowLeft ? "FireL" : "FireR");
                 fireStep = 0;
-                canAction = false;
                 anim->startUpperBodyAnim(fireAnim); // upper body: keep moving/gliding
-                if (isFullBody) anim->startAnim(fireAnim); // standing: full body
+                if (onGround) anim->startAnim(fireAnim); // standing: full body
                 if (isBlast) { al::setSensorRadius(thisPtr, "Eye", 1600.0f); al::tryStartSe(thisPtr, "BlasterShoot"); } // widen for homing
             }
         }
 
+        canAction = false; // one-frame latch: TryCapSpinPre stops running during a capture
         if (fireStep < 0) return;
 
-        bool isShooting = anim->isUpperBodyAnim("FireL") || anim->isUpperBodyAnim("FireR") || anim->isUpperBodyAnim("BlastShoot") || anim->isAnim("FireL") || anim->isAnim("FireR") || anim->isAnim("BlastShoot");
-        if (!isShooting) { fireStep = -1; restoreEyeRadius(); return;}
+        bool isShooting = anim->isUpperBodyAnim("FireL") || anim->isUpperBodyAnim("FireR") || anim->isUpperBodyAnim("BlastShoot")
+            || anim->isAnim("FireL") || anim->isAnim("FireR") || anim->isAnim("BlastShoot");
+        if (!isShooting) { fireStep = -1; restoreEyeRadius(); return; }
 
-        if (fireStep == spawnFrame) spawnProjectile(thisPtr, model, pool, jointName, isBlast);
+        if (fireStep == (isBlast ? 40 : 2)) spawnProjectile(thisPtr, model, pool, (!isBlast && nextThrowLeft) ? "HandL" : "HandR", isBlast);
 
-        if (isFullBody ? anim->isAnimEnd() : anim->isUpperBodyAnimEnd()) {
+        if (onGround ? anim->isAnimEnd() : anim->isUpperBodyAnimEnd()) {
             fireStep = -1;
             restoreEyeRadius();
             anim->clearUpperBodyAnim();

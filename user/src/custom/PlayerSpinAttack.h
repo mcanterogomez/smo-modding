@@ -3,6 +3,25 @@
 #include "custom/.Globals.h"
 #include "custom/.Nerves.h"
 
+inline void cleanupSpinAttackState(al::LiveActor* actor) {
+    isSpinActive = false;
+    isNearCollectible = false;
+    isNearTreasure = false;
+    isNearSwoonedEnemy = false;
+
+    spin.isGalaxy = false;
+    spin.fakethrowRemainder = -1;
+    attackSensorRemaining = -1;
+
+    al::invalidateHitSensor(actor, "Punch");
+    al::invalidateHitSensor(actor, "GalaxySpin");
+    al::invalidateHitSensor(actor, "DoubleSpin");
+
+    auto* model = isHakoniwa->mModelHolder->findModelActor("Normal");
+    al::tryDeleteEffect(model, "SpinAttack");
+    al::tryStopSe(model, "SpinAttack", -1, nullptr);
+}
+
 namespace PlayerSpinAttack {
 
     struct InputIsTriggerActionXexclusivelyHook : public mallow::hook::Trampoline<InputIsTriggerActionXexclusivelyHook> {
@@ -126,21 +145,6 @@ namespace PlayerSpinAttack {
             }
         }
     };
-
-    inline void cleanupSpinAttackState(al::LiveActor* actor) {
-        isSpinActive = false;
-        isNearCollectible = false;
-        isNearTreasure = false;
-        isNearSwoonedEnemy = false;
-
-        spin.isGalaxy = false;
-        spin.fakethrowRemainder = -1;
-        attackSensorRemaining = -1;
-
-        al::invalidateHitSensor(actor, "Punch");
-        al::invalidateHitSensor(actor, "GalaxySpin");
-        al::invalidateHitSensor(actor, "DoubleSpin");
-    }
 
     struct PlayerStateSpinCapKill : public mallow::hook::Trampoline<PlayerStateSpinCapKill> {
         static void Callback(PlayerStateSpinCap* state) {

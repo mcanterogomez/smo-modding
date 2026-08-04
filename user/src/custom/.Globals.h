@@ -279,6 +279,7 @@ inline int attackSensorRemaining = -1;
 inline int fireStep = -1;
 inline int drillStep = -1;
 inline int drillSensorRemaining = -1; // hitbox lingers N frames after drill pop
+inline int guardWindow = 0; // frames left to parry
 inline int isCapeActive = -1;
 inline int isMarioActive = 0; // 0 = none, 1 = enabling, -1 = disabling
 
@@ -383,30 +384,27 @@ inline al::LiveActor* findNearestTarget(const al::LiveActor* player, f32 maxDist
 //                      CUSTOM STATES
 // =========================================================
 
+enum class isSpin { None, Galaxy, Standard };
+
 struct SpinState {
 	bool isGalaxy = false;
 	bool canGalaxy = true;
 	bool canStandard = true;
-	bool galaxyAfterStandard = false;
-	bool standardAfterGalaxy = false;
+	isSpin queued = isSpin::None; // cross-spin transition set by tryCapSpinAndRethrow
 	bool trigger = false;
-	int fakethrowRemainder = -1;
-
-	void reset() {
-		isGalaxy = false;
-		canGalaxy = true;
-		canStandard = true;
-		galaxyAfterStandard = false;
-		standardAfterGalaxy = false;
-		trigger = false;
-		fakethrowRemainder = -1;
-	}
+	int fakethrowRemainder = -1; // -1 idle, -2 queued, >0 timer
 
 	void resetForNewSpin() {
 		canGalaxy = true;
 		canStandard = true;
-		galaxyAfterStandard = false;
-		standardAfterGalaxy = false;
+		queued = isSpin::None;
+	}
+
+	void reset() {
+		resetForNewSpin();
+		isGalaxy = false;
+		trigger = false;
+		fakethrowRemainder = -1;
 	}
 };
 
@@ -414,15 +412,21 @@ inline SpinState spin;
 enum class SpinPre { Fallthrough, Accept, Reject };
 
 // Handle Guard state
-namespace PlayerGuard { enum : int { Idle = -1, Blocked = 0, Active = 1 }; }
-inline int guardStep = PlayerGuard::Idle;
-inline int guardWindow = 0; // frames left to parry
+inline bool isGuarding() {
+	return isHakoniwa && (isHakoniwa->mAnimator->isUpperBodyAnim("HitGuard") || isHakoniwa->mAnimator->isAnim("HitGuard"));
+}
 
-inline bool isActionBusy() { return guardStep >= 0 || fireStep >= 0 || drillStep >= 0; }
+// Handle active action state
+inline bool isActionBusy() { return isGuarding() || fireStep >= 0 || drillStep >= 0; }
 
 // =========================================================
 //                   ANIMATION CHECKS
 // =========================================================
+
+// endSubAnim restarts the main anim when nothing is attached, so always gate it
+inline void tryEndSubAnim(PlayerAnimator* anim) {
+	if (anim->isSubAnimPlaying()) anim->endSubAnim();
+}
 
 inline bool isBaseSpinAnim(const PlayerAnimator* anim) {
 	return al::isEqualString(anim->mCurAnim, "SpinSeparate")

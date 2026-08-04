@@ -49,8 +49,8 @@ namespace PlayerSpinAttack {
             ) {
                 if (isSpinAnim(player->mAnimator) || isPunchAnim(player->mAnimator)) return SpinPre::Reject;
 
-                if (spin.canGalaxy) spin.trigger = true;
-                else { spin.trigger = true; spin.fakethrowRemainder = -2; }
+                spin.trigger = true;
+                if (!spin.canGalaxy) spin.fakethrowRemainder = -2; // no galaxy left, queue a fake
                 return SpinPre::Accept;
             }
         #endif
@@ -63,29 +63,27 @@ namespace PlayerSpinAttack {
         return SpinPre::Fallthrough;
     }
 
+    // Shared body for both TryActionCapSpinAttack entry points
+    template <typename Hook>
+    static bool TryCapSpin(PlayerActorHakoniwa* player, bool a2) {
+        switch (TryCapSpinPre(player)) {
+            case SpinPre::Accept: return true;
+            case SpinPre::Reject: return false;
+            default: break;
+        }
+        if (Hook::Orig(player, a2)) { spin.trigger = false; return true; }
+        return false;
+    }
+
     struct PlayerTryActionCapSpinAttack : public mallow::hook::Trampoline<PlayerTryActionCapSpinAttack> {
         static bool Callback(PlayerActorHakoniwa* player, bool a2) {
-            switch (TryCapSpinPre(player)
-            ) {
-                case SpinPre::Accept:  return true;
-                case SpinPre::Reject:  return false;
-                default: break;
-            }
-            if(Orig(player, a2)) { spin.trigger = false; return true; }
-            return false;
+            return TryCapSpin<PlayerTryActionCapSpinAttack>(player, a2);
         }
     };
 
     struct PlayerTryActionCapSpinAttackBindEnd : public mallow::hook::Trampoline<PlayerTryActionCapSpinAttackBindEnd> {
         static bool Callback(PlayerActorHakoniwa* player, bool a2) {
-            switch (TryCapSpinPre(player)
-            ) {
-                case SpinPre::Accept:  return true;
-                case SpinPre::Reject:  return false;
-                default: break;
-            }
-            if(Orig(player, a2)) { spin.trigger = false; return true; }
-            return false;
+            return TryCapSpin<PlayerTryActionCapSpinAttackBindEnd>(player, a2);
         }
     };
 
@@ -94,7 +92,7 @@ namespace PlayerSpinAttack {
             bool isGrounded = rs::isOnGround(state->mActor, state->mCollider) && !state->mTrigger->isOn(PlayerTrigger::EActionTrigger_val2);
             bool forcedGroundSpin = state->mTrigger->isOn(PlayerTrigger::EActionTrigger_val33);
 
-            // Safety fix: clear leftover fakethrow state from area load mid-spin
+            // Clear leftover fakethrow state from an area load mid-spin
             if (spin.fakethrowRemainder != -1
                 && !al::isNerve(state, &GalaxySpinGround)
                 && !al::isNerve(state, &GalaxySpinAir)
@@ -104,11 +102,12 @@ namespace PlayerSpinAttack {
                 // DO NOT reset spin.trigger here!
             }
 
-            // Apply cross-spin transition flags set by tryCapSpinAndRethrow
-            if (spin.galaxyAfterStandard) { spin.galaxyAfterStandard = false; spin.canStandard = false; spin.trigger = true; }
-            if (spin.standardAfterGalaxy) { spin.standardAfterGalaxy = false; spin.canGalaxy = false; spin.trigger = false; }
+            // Cross-spin transition queued by tryCapSpinAndRethrow
+            if (spin.queued == isSpin::Galaxy) { spin.canStandard = false; spin.trigger = true; }
+            else if (spin.queued == isSpin::Standard) { spin.canGalaxy = false; spin.trigger = false; }
+            spin.queued = isSpin::None;
 
-            // Standard cap throw — trigger not set, run vanilla logic
+            // No trigger: plain cap throw
             if (!spin.trigger) {
                 spin.canStandard = false;
                 spin.isGalaxy = false;
@@ -116,32 +115,19 @@ namespace PlayerSpinAttack {
                 return;
             }
 
-            // Galaxy spin mode — consume trigger and set state
             hitBufferCount = 0;
             spin.isGalaxy = true;
             spin.canGalaxy = false;
             spin.trigger = false;
 
-            // Reset internal spin cap state fields
-            state->mIsDead = false;
-            state->mIsInWater = false;
-            state->_99 = 0;
-            state->_80 = 0;
-            state->_9C = sead::Vector3f::zero;
-            state->_A8 = 0;
-            state->_A9 = state->mTrigger->isOn(PlayerTrigger::EActionTrigger_val0);
+            Orig(state); // Vanilla appear() does every reset, velocity align, move control appear and _78 — only its nerve is wrong
 
             if (forcedGroundSpin || isGrounded) {
-                if (state->mTrigger->isOn(PlayerTrigger::EActionTrigger_val1))
-                    al::alongVectorNormalH(al::getVelocityPtr(state->mActor), al::getVelocity(state->mActor),
-                        al::getGravity(state->mActor), rs::getCollidedGroundNormal(state->mCollider));
-                state->mActionGroundMoveControl->appear();
+                if (!isGrounded) state->mActionGroundMoveControl->appear(); // vanilla took the air path
                 al::setNerve(state, &GalaxySpinGround);
             } else {
-                state->_78 = 1;
-                // fakethrowRemainder == -2 means a fakespin was queued, route directly to fall
-                if (spin.fakethrowRemainder == -2) al::setNerve(state, getNerveAt(nrvSpinCapFall));
-                else al::setNerve(state, &GalaxySpinAir);
+                // -2 means a fakespin is queued, route straight to fall
+                al::setNerve(state, spin.fakethrowRemainder == -2 ? getNerveAt(nrvSpinCapFall) : &GalaxySpinAir);
             }
         }
     };
@@ -156,20 +142,17 @@ namespace PlayerSpinAttack {
     struct PlayerStateSpinCapFall : public mallow::hook::Trampoline<PlayerStateSpinCapFall> {
         static void Callback(PlayerStateSpinCap* state) {
             Orig(state);
-            // If fakethrow is active and the current animation is "SpinSeparate"
+
+            // Landed mid-fakethrow: go to ground spin without restarting the anim
             if (spin.fakethrowRemainder != -1 && state->mAnimator->isAnim("SpinSeparate")
-            ) {
-                bool onGround = rs::isOnGround(state->mActor, state->mCollider);
-                if (onGround) {
-                    // Transition to the ground spin nerve without restarting the animation.
-                    state->mActionGroundMoveControl->appear();
-                    al::setNerve(state, &GalaxySpinGround);
-                    return;
-                }
+                && rs::isOnGround(state->mActor, state->mCollider)) {
+                state->mActionGroundMoveControl->appear();
+                al::setNerve(state, &GalaxySpinGround);
+                return;
             }
-            // Normal FakeSpin timer logic for when still airborne:
-            if (spin.fakethrowRemainder == -2
-            ) {
+
+            // Fakespin timer while still airborne
+            if (spin.fakethrowRemainder == -2) {
                 spin.fakethrowRemainder = 21;
                 hitBufferCount = 0;
                 al::validateHitSensor(state->mActor, "GalaxySpin");
@@ -206,11 +189,7 @@ namespace PlayerSpinAttack {
     };
 
     struct PlayerSpinCapAttackIsSeparateSingleSpin : public mallow::hook::Trampoline<PlayerSpinCapAttackIsSeparateSingleSpin> {
-        static bool Callback(PlayerStateSwim* thisPtr) {
-            if(spin.trigger) return true;
-
-            return Orig(thisPtr);
-        }
+        static bool Callback(PlayerStateSwim* thisPtr) { return spin.trigger || Orig(thisPtr); }
     };
 
     // Shared swim spin logic
@@ -273,17 +252,22 @@ namespace PlayerSpinAttack {
         animator->setAnimRate(0.5f);
     }
 
+    // Shared body for both swim StartSpinSeparate entry points
+    template <typename Hook>
+    static void SwimSpinStart(PlayerSpinCapAttack* thisPtr, PlayerAnimator* animator) {
+        if (!spin.isGalaxy && !spin.trigger) { Hook::Orig(thisPtr, animator); return; }
+        SwimSpinAnimSelect(thisPtr, animator);
+    }
+
     struct PlayerSpinCapAttackStartSpinSeparateSwimSurface : public mallow::hook::Trampoline<PlayerSpinCapAttackStartSpinSeparateSwimSurface> {
         static void Callback(PlayerSpinCapAttack* thisPtr, PlayerAnimator* animator) {
-            if(!spin.isGalaxy && !spin.trigger) { Orig(thisPtr, animator); return; }
-            SwimSpinAnimSelect(thisPtr, animator);
+            SwimSpinStart<PlayerSpinCapAttackStartSpinSeparateSwimSurface>(thisPtr, animator);
         }
     };
 
     struct PlayerSpinCapAttackStartSpinSeparateSwim : public mallow::hook::Trampoline<PlayerSpinCapAttackStartSpinSeparateSwim> {
         static void Callback(PlayerSpinCapAttack* thisPtr, PlayerAnimator* animator) {
-            if(!spin.isGalaxy && !spin.trigger) { Orig(thisPtr, animator); return; }
-            SwimSpinAnimSelect(thisPtr, animator);
+            SwimSpinStart<PlayerSpinCapAttackStartSpinSeparateSwim>(thisPtr, animator);
         }
     };
 
@@ -307,23 +291,21 @@ namespace PlayerSpinAttack {
         isSpinRethrow = false;
         if (!trySpin) return;
 
-        if (isPadTriggerGalaxySpin(-1)
-        ) {
+        if (isPadTriggerGalaxySpin(-1)) {
             if (spin.isGalaxy && (spin.fakethrowRemainder != -1 || player->mAnimator->isAnim("SpinSeparate"))) return;
-            if (spin.canGalaxy) {
-                al::setNerve(player, getNerveAt(spinCapNrvOffset));
-                if (!spin.isGalaxy && !spin.canStandard) spin.galaxyAfterStandard = true;
-            } else {
-                spin.fakethrowRemainder = -2;
-            }
-        } else {
-            if (!spin.canStandard) return;
+            if (!spin.canGalaxy) { spin.fakethrowRemainder = -2; return; }
+
             al::setNerve(player, getNerveAt(spinCapNrvOffset));
-            if (spin.isGalaxy) spin.standardAfterGalaxy = true;
+            if (!spin.isGalaxy && !spin.canStandard) spin.queued = isSpin::Galaxy;
+            return;
         }
+
+        if (!spin.canStandard) return;
+        al::setNerve(player, getNerveAt(spinCapNrvOffset));
+        if (spin.isGalaxy) spin.queued = isSpin::Standard;
     }
 
-    // Shared squat and roll state
+    // Shared squat and roll trigger
     static bool TriggerSpinFromState(PlayerActorHakoniwa* thisPtr) {
         if (!isPadTriggerGalaxySpin(-1) || isSpinAnim(thisPtr->mAnimator)) return false;
 
@@ -366,14 +348,14 @@ namespace PlayerSpinAttack {
 
     struct PlayerCarryKeeperIsCarryDuringSpin : public mallow::hook::Inline<PlayerCarryKeeperIsCarryDuringSpin> {
         static void Callback(exl::hook::InlineCtx* ctx) {
-            // if either currently in galaxyspin or already finished galaxyspin while still in-air
+            // In a galaxy spin, or already finished one while still airborne
             if(ctx->X[0] && (spin.isGalaxy || !spin.canGalaxy)) ctx->X[0] = false;
         }
     };
 
     struct PlayerCarryKeeperIsCarryDuringSwimSpin : public mallow::hook::Inline<PlayerCarryKeeperIsCarryDuringSwimSpin> {
         static void Callback(exl::hook::InlineCtx* ctx) {
-            // if either currently in galaxyspin
+            // In a galaxy spin
             if(ctx->X[0] && (spin.isGalaxy || spin.trigger)) ctx->X[0] = false;
         }
     };
@@ -389,8 +371,6 @@ namespace PlayerSpinAttack {
             InputIsTriggerActionXexclusivelyHook::InstallAtSymbol("_ZN19PlayerInputFunction15isTriggerActionEPKN2al9LiveActorEi");
 
             // Trigger spin instead of cap throw
-            //PlayerTryActionCapSpinAttack::InstallAtSymbol("_ZN19PlayerActorHakoniwa26tryActionCapSpinAttackImplEb");
-            //PlayerTryActionCapSpinAttackBindEnd::InstallAtSymbol("_ZN19PlayerActorHakoniwa29tryActionCapSpinAttackBindEndEv");
             PlayerSpinCapAttackAppear::InstallAtSymbol("_ZN18PlayerStateSpinCap6appearEv");
             PlayerStateSpinCapKill::InstallAtSymbol("_ZN18PlayerStateSpinCap4killEv");
             PlayerStateSpinCapFall::InstallAtSymbol("_ZN18PlayerStateSpinCap7exeFallEv");
@@ -408,7 +388,6 @@ namespace PlayerSpinAttack {
             DisallowCancelOnWaterSurfaceSpinPatch::InstallAtOffset(0x48A3C8);
 
             // Allow triggering spin on roll and squat
-            //PlayerActorHakoniwaExeSquat::InstallAtSymbol("_ZN19PlayerActorHakoniwa8exeSquatEv");
             PlayerActorHakoniwaExeRolling::InstallAtSymbol("_ZN19PlayerActorHakoniwa10exeRollingEv");
 
             // Allow carrying an object during a GalaxySpin

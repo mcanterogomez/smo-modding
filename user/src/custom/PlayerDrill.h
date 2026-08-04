@@ -89,7 +89,7 @@ namespace PlayerDrill {
                 canAction = false;
                 // Force-cancel any active player state (spin cap, taunt, etc).
                 al::setNerve(thisPtr, getNerveAt(nrvHakoniwaFall));
-                anim->endSubAnim();
+                tryEndSubAnim(anim);
 
                 if (onWall) snapGravityToWall(thisPtr);
                 else stickGravity = defaultGravity;

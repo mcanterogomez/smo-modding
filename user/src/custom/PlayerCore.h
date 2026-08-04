@@ -252,36 +252,16 @@ namespace PlayerCore {
                     al::startActionSubActor(model, "顔", "AreaWaitFight");
             }
 
-            // Handle guard attacks
-            switch (guardStep) {
-                case PlayerGuard::Idle: {
-                    if ((isMario || isBrawl)
-                        && ((al::isPadTriggerZL(-1) && al::isPadHoldZR(-1)) || (al::isPadTriggerZR(-1) && al::isPadHoldZL(-1)))) guardWindow = 5;
-                    else if (guardWindow > 0) guardWindow--;
-                    break;
-                }
-                case PlayerGuard::Blocked: {
-                    anim->startUpperBodyAnim("HitGuard"); // upper body: keep falling/moving
-                    if (onGround) anim->startAnim("HitGuard"); // standing: full body
-                    al::tryEmitEffect(thisPtr, "HitGuard", nullptr);
-                    al::tryStartSe(thisPtr, "HitGuard");
-                    guardWindow = 0;
-                    guardStep = PlayerGuard::Active;
-                    break;
-                }
-                case PlayerGuard::Active: {
-                    if (!anim->isUpperBodyAnim("HitGuard") && !anim->isAnim("HitGuard")) { guardStep = PlayerGuard::Idle; break; }
+            // Handle guard window
+            static bool wasGuardHold = false;
+            bool isGuardHold = al::isPadHoldZL(-1) && al::isPadHoldZR(-1);
 
-                    if (onGround ? anim->isAnimEnd() : anim->isUpperBodyAnimEnd()) {
-                        anim->clearUpperBodyAnim();
-                        al::setNerve(thisPtr, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
-                        guardStep = PlayerGuard::Idle;
-                    }
-                    break;
-                }
-            }
+            if ((isMario || isBrawl) && isGuardHold && !wasGuardHold) guardWindow = 10;
+            else if (guardWindow > 0) guardWindow--;
+            wasGuardHold = isGuardHold;
 
-            #ifdef ALLOW_TAUNT // Handle Taunt actions
+            // Handle Taunt actions
+            #ifdef ALLOW_TAUNT
                 if (!isMove
                     && (al::isNerve(thisPtr, getNerveAt(nrvHakoniwaWait)) || al::isNerve(thisPtr, getNerveAt(nrvHakoniwaSquat)))
                     && !al::isNerve(thisPtr, &TauntLeftNrv) && !al::isNerve(thisPtr, &TauntRightNrv)
@@ -302,7 +282,7 @@ namespace PlayerCore {
 
     struct PlayerActorHakoniwaReceiveMsgHook : public mallow::hook::Trampoline<PlayerActorHakoniwaReceiveMsgHook> {
         static bool Callback(PlayerActorHakoniwa* thisPtr, const al::SensorMsg* msg, al::HitSensor* source, al::HitSensor* target) {
-            if (guardStep != PlayerGuard::Idle
+            if (isGuarding()
                 || drillStep != PlayerDrill::Idle || drillSensorRemaining > 0
                 || PlayerFreeze::handleReceiveMsg(msg, source)) return false;
 
@@ -324,9 +304,8 @@ namespace PlayerCore {
                 if (source && guardWindow > 0 && thisPtr->mDamageKeeper->mDamageInvalidCount <= 0) {
                     al::LiveActor* attacker = al::getSensorHost(source);
 
-                    guardStep = PlayerGuard::Blocked;
-                    al::setNerve(thisPtr, getNerveAt(nrvHakoniwaFall));
-                    al::setVelocityBlowAttackAndTurnToTarget(thisPtr, al::getTrans(attacker), 10.0f, 10.0f); // push Mario
+                    al::setNerve(thisPtr, &GuardNrv);
+                    al::setVelocityBlowAttackAndTurnToTarget(thisPtr, al::getTrans(attacker), 5.0f, 5.0f); // push Mario
                     if (al::isExistAction(attacker, "BlowDown")) al::setVelocityBlowAttack(attacker, al::getTrans(thisPtr), 10.0f, 10.0f); // push attacker
                     return false;
                 }
@@ -338,8 +317,7 @@ namespace PlayerCore {
     // Protect sub-anims from being killed by game code
     struct EndSubAnimGuard : public mallow::hook::Trampoline<EndSubAnimGuard> {
         static void Callback(PlayerAnimator* anim) {
-            if (!anim->isSubAnimEnd()
-                && (guardStep != PlayerGuard::Idle || isDrillAnim(anim))) return;
+            if (!anim->isSubAnimEnd() && isDrillAnim(anim)) return;
             Orig(anim);
         }
     };
@@ -371,8 +349,7 @@ namespace PlayerCore {
 
     struct PlayerJudgeStartSquatHook : public mallow::hook::Trampoline<PlayerJudgeStartSquatHook> {
         static bool Callback(void* thisPtr) {
-            if (guardStep != PlayerGuard::Idle
-                || (isDrill && isHakoniwa->mHackCap->isPutOn() && al::isPadHoldZR(-1))) return false;
+            if (isDrill && isHakoniwa->mHackCap->isPutOn() && al::isPadHoldZR(-1)) return false;
             return Orig(thisPtr);
         }
     };

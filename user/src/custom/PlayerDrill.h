@@ -155,9 +155,8 @@ namespace PlayerDrill {
         auto* anim = thisPtr->mAnimator;
         auto* damage = thisPtr->mDamageKeeper;
 
-        bool isHack = thisPtr->mHackKeeper && thisPtr->mHackKeeper->mHackActor;
         bool isFlicker = damage && damage->mDamageInvalidCount > 0;
-        bool controllable = !isHack && !rs::isActiveDemo(thisPtr); // not captured or in a demo
+        bool controllable = !isHacking() && !rs::isActiveDemo(thisPtr); // not captured or in a demo
         bool isActive = !isFlicker && controllable;
         bool capOn = thisPtr->mHackCap->isPutOn();
         bool inHipDrop = al::isNerve(thisPtr, getNerveAt(nrvHakoniwaHipDrop));

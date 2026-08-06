@@ -380,6 +380,15 @@ inline al::LiveActor* findNearestTarget(const al::LiveActor* player, f32 maxDist
 	return nearest;
 }
 
+// Captured actors keep vanilla behaviour
+inline bool isHacking() { return isHakoniwa && isHakoniwa->mHackKeeper && isHakoniwa->mHackKeeper->mHackActor; }
+
+// Underwater and too deep for the surface to matter
+inline bool isSubmerged(const PlayerActorHakoniwa* player) {
+    auto* wsf = player->mWaterSurfaceFinder;
+    return al::isInWater(player) && !(wsf && wsf->isFoundSurface() && wsf->getDistance() <= 80.0f);
+}
+
 // =========================================================
 //                      CUSTOM STATES
 // =========================================================

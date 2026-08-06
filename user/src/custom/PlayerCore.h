@@ -68,6 +68,7 @@ namespace PlayerCore {
     struct PlayerMovementHook : public mallow::hook::Trampoline<PlayerMovementHook> {
         static void Callback(PlayerActorHakoniwa* thisPtr) {
             Orig(thisPtr);
+
             auto* anim = thisPtr->mAnimator;
             auto* model  = thisPtr->mModelHolder->findModelActor("Normal");
             bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
@@ -83,9 +84,8 @@ namespace PlayerCore {
             // Toggle configs
             if (al::isPadHoldL(-1) && al::isPadHoldPressLeftStick(-1)
             ) {
-                bool isHack = thisPtr->mHackKeeper && thisPtr->mHackKeeper->mHackActor;
                 bool isFlicker = thisPtr->mDamageKeeper && thisPtr->mDamageKeeper->mDamageInvalidCount > 0;
-                if (isHack || isFlicker || rs::isActiveDemo(thisPtr)) return;
+                if (isHacking() || isFlicker || rs::isActiveDemo(thisPtr)) return;
                 bool changed = false;
 
                 if (isPadTriggerGalaxySpin(-1)) { isConfig()->spinOnly = !isConfig()->spinOnly; changed = true; }

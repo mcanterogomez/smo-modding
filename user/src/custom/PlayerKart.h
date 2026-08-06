@@ -51,7 +51,7 @@ namespace PlayerKart {
 
     inline void executeMovement(PlayerActorHakoniwa* thisPtr) {
         bool isActive = !(thisPtr->mDamageKeeper && thisPtr->mDamageKeeper->mDamageInvalidCount > 0)
-            && !(thisPtr->mHackKeeper && thisPtr->mHackKeeper->mHackActor) && !rs::isActiveDemo(thisPtr);
+            && !isHacking() && !rs::isActiveDemo(thisPtr);
 
         // Handle kart spawning
         static int holdLeftFrames = 0;

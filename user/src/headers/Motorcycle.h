@@ -49,9 +49,10 @@ public:
 
     char gap0[0x138 - sizeof(al::LiveActor) - sizeof(IUsePlayerCollision)];
     f32 mLean; // AllRoot Z-rotation input; al::initJointLocalZRotator(this, &mLean, "AllRoot") in Motorcycle::init, written each frame in exeRideRun
+    f32 mSteer; // Handle X / FrontWheel Y / Cowl Y rotation input; normalizeAbs(mLean, 0, 55) * -32.5 at the end of Motorcycle::movement
 
 private:
-    char gap1[0x258 - 0x138 - sizeof(f32)];
+    char gap1[0x250 - 0x138 - sizeof(f32) * 2];
 };
 
-static_assert(sizeof(Motorcycle) == 0x258, "Motorcycle Size");
+static_assert(sizeof(Motorcycle) == 0x250, "Motorcycle Size");

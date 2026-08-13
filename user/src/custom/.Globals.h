@@ -200,11 +200,12 @@ inline bool hasSensor(const al::LiveActor* actor, Fns... checks) {
 
 const uintptr_t spinCapNrvOffset = 0x1D78940;
 const uintptr_t nrvSpinCapFall = 0x1D7ff70;
-const uintptr_t nrvHakoniwaWait = 0x01D78918;
-const uintptr_t nrvHakoniwaSquat = 0x01D78920;
-const uintptr_t nrvHakoniwaFall = 0x01D78910;
+const uintptr_t nrvHakoniwaFall = 0x1D78910;
 const uintptr_t nrvHakoniwaHipDrop = 0x1D78978;
 const uintptr_t nrvHakoniwaJump = 0x1D78948;
+const uintptr_t nrvHakoniwaRun = 0x1D78928;
+const uintptr_t nrvHakoniwaSquat = 0x1D78920;
+const uintptr_t nrvHakoniwaWait = 0x1D78918;
 
 // =========================================================
 //                        FLAGS
@@ -291,6 +292,7 @@ inline float wheelSpin = 0.0f;
 inline float propellerSpin = 0.0f;
 inline float propellerSpeed = 0.0f;
 inline float propellerOffset = 0.0f;
+inline sead::Quatf wheelSteerQuat = sead::Quatf::unit;
 inline sead::Vector3f propellerScale = {0.0f, 0.0f, 0.0f};
 
 // Constants

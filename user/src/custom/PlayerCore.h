@@ -347,13 +347,6 @@ namespace PlayerCore {
         }
     };
 
-    struct PlayerJudgeStartSquatHook : public mallow::hook::Trampoline<PlayerJudgeStartSquatHook> {
-        static bool Callback(void* thisPtr) {
-            if (isDrill && isHakoniwa->mHackCap->isPutOn() && al::isPadHoldZR(-1)) return false;
-            return Orig(thisPtr);
-        }
-    };
-
     inline void Install() {
         // Initialize player actor
         PlayerActorHakoniwaInitPlayer::InstallAtSymbol("_ZN19PlayerActorHakoniwa10initPlayerERKN2al13ActorInitInfoERK14PlayerInitInfo");
@@ -365,7 +358,5 @@ namespace PlayerCore {
         // Handles effects
         EmitEmittersHook::InstallAtSymbol("_ZN2al6Effect15tryEmitEmittersEPKN4sead7Vector3IfEEb");
         EffectHitReactionLimitHook::InstallAtOffset(0xA5B938);
-        // Others
-        PlayerJudgeStartSquatHook::InstallAtSymbol("_ZNK21PlayerJudgeStartSquat5judgeEv");
     }
 }

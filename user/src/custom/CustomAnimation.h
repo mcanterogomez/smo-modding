@@ -91,13 +91,16 @@ namespace CustomAnimation {
 		return nullptr;
 	}
 
-	inline int idlePlayed = 0;
+	inline int idlePlayed = 0; // anims played this idle, reset when the nerve re-enters
 
 	// Idle-cycle anim for the current suit, or nullptr when spent — add new suits here
 	inline const char* idleCycleAnim(bool alt, const PlayerAnimator* anim = nullptr) {
 		if (!isHakoniwa || (anim && anim != isHakoniwa->mAnimator)) return nullptr;
-		if (isMario && isDefinitve()) return idlePlayed <= 2 ? (alt ? "AreaWaitView" : "AreaWaitStretch") : nullptr; // waits 1-4 play anims, wait 5 holds then relax
-		//if (isBrawl) return alt ? "AreaWaitView" : "AreaWaitStretch"; // no cap: loops forever
+		if (areaWaitAnim(isHakoniwa)) return nullptr; // the engine owns the wait here, leave it alone
+		if (!remapAnim("Wait", anim) && idlePlayed > 2) return nullptr; // Wait is untouched, so vanilla relax exists: each anim once, then one held wait before handing over
+
+		if (isMario && isDefinitve()) return alt ? "AreaWaitView" : "AreaWaitStretch";
+		//if (isBrawl) return alt ? "AreaWaitView" : "AreaWaitStretch";
 		return nullptr;
 	}
 
@@ -113,9 +116,10 @@ namespace CustomAnimation {
 		if (step - base < 720) return;
 		if (isActionBusy()) { base = step; return; } // blast, guard and drill run inside this nerve, so hold the window open
 
-		idlePlayed++;
-		const char* altAnim = idleCycleAnim((idlePlayed - 1) & 1);
+		base = step; // window is consumed either way, so a spent cycle stops re-testing every frame
+		const char* altAnim = idleCycleAnim(idlePlayed++ & 1); // post-increment, so the parity is the window index but the cap sees the new count
 		if (!altAnim) return;
+
 		anim->startAnim(altAnim);
 		isCycling = true;
 	}

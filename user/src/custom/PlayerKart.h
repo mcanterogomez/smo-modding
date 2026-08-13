@@ -41,6 +41,8 @@ namespace PlayerKart {
             // Wheel spin (X): continuous axle rotation while hovering
             al::initJointLocalXRotator(isKart, &wheelSpin, "FrontTireR"); al::initJointLocalXRotator(isKart, &wheelSpin, "FrontTireL");
             al::initJointLocalXRotator(isKart, &wheelSpin, "BackTireR"); al::initJointLocalXRotator(isKart, &wheelSpin, "BackTireL");
+            // Wheel steer (Y): post-quat rotates the joint in parent space, so the anim's spin turns with it; registered last to wrap tilt and spin too
+            al::initJointPostQuatController(isKart, &wheelSteerQuat, "FrontTireR"); al::initJointPostQuatController(isKart, &wheelSteerQuat, "FrontTireL");            // Propeller
             // Propeller
             al::initJointLocalZRotator(isKart, &propellerSpin, "Propeller"); al::initJointLocalTransControllerZ(isKart, &propellerOffset, "Propeller");
             al::initJointLocalScaleController(isKart, &propellerScale, "Propeller");
@@ -144,19 +146,19 @@ namespace PlayerKart {
 
             auto* kart = static_cast<Motorcycle*>(actor);
 
-            // Lean: none on the ground, half while hovering, eased by hoverBlend between them
-            float groundLean = 0.0f;
-            float hoverLean = 0.75f;
-
+            // Lean: none on the ground, 75% while hovering
             float savedLean = kart->mLean;
-            kart->mLean *= al::lerpValue(groundLean, hoverLean, hoverBlend);
+            kart->mLean *= 0.75f * hoverBlend;
+
+            // Steer: hand it to the per-tire post-quats and zero the vanilla one, whose Cowl joint parents both front tires
+            al::makeQuatYDegree(&wheelSteerQuat, kart->mSteer);
+            kart->mSteer = 0.0f;
 
             Orig(actor);
 
             kart->mLean = savedLean;
         }
     };
-
     struct MotorcycleMovementHook : public mallow::hook::Trampoline<MotorcycleMovementHook> {
 		static void Callback(al::LiveActor* actor) {
 			if (actor != (al::LiveActor*)isKart || !al::isAlive(actor)) { Orig(actor); return; }

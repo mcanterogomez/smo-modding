@@ -286,17 +286,17 @@ namespace PlayerSpinAttack {
 		return true;
 	}
 
-	struct PlayerActorHakoniwaExeSquat : public mallow::hook::Trampoline<PlayerActorHakoniwaExeSquat> {
-		static void Callback(PlayerActorHakoniwa* thisPtr) {
-			if (isActionBusy()) return;
+    struct PlayerJudgeStartSquatHook : public mallow::hook::Trampoline<PlayerJudgeStartSquatHook> {
+        static bool Callback(void* thisPtr) {
+            if (isActionBusy() || (isDrill && isHakoniwa->mHackCap->isPutOn() && al::isPadHoldZR(-1))) return false;
 
 			#ifndef ALLOW_CAPPY_ONLY
-				if (TriggerSpinFromState(thisPtr)) return;
+				if (TriggerSpinFromState(isHakoniwa)) return false;
 			#endif
 
-			Orig(thisPtr);
-		}
-	};
+            return Orig(thisPtr);
+        }
+    };
 
 	struct PlayerActorHakoniwaExeRolling : public mallow::hook::Trampoline<PlayerActorHakoniwaExeRolling> {
 		static void Callback(PlayerActorHakoniwa* thisPtr) {
@@ -331,7 +331,7 @@ namespace PlayerSpinAttack {
 
 		TryCapSpinHook<0>::InstallAtSymbol("_ZN19PlayerActorHakoniwa26tryActionCapSpinAttackImplEb");
 		TryCapSpinHook<1>::InstallAtSymbol("_ZN19PlayerActorHakoniwa29tryActionCapSpinAttackBindEndEv");
-		PlayerActorHakoniwaExeSquat::InstallAtSymbol("_ZN19PlayerActorHakoniwa8exeSquatEv");
+		PlayerJudgeStartSquatHook::InstallAtSymbol("_ZNK21PlayerJudgeStartSquat5judgeEv");
 
 		#ifndef ALLOW_CAPPY_ONLY
 			// Modify triggers

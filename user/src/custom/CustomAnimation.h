@@ -32,10 +32,6 @@ namespace CustomAnimation {
 
 		if (isWeaponOn && is("Wait")) return "BattleWait";
 
-		if (isTanooki) {
-			if (is("Glide")) return "GlideAlt";
-			if (is("JumpBroad8")) return "JumpBroad8Alt";
-		}
 		if (isFly) {
 			if (is("GlideFloat")) return "GlideFloatSuper";
 			if (is("Wait")) return "WaitSuper";

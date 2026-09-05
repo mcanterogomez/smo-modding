@@ -159,7 +159,7 @@ public:
                 al::setNerve(state, &GalaxySpinGround);
                 return;
             }
-            applyLunge(player, 5.0f, 5.0f);
+            applyLunge(player, 5.0f, 3.75f);
             if (isFrame == 6.0f) { al::validateHitSensor(state->mActor, "Punch"); attackSensorRemaining = 6; }
         }
         else if (isJumpPunch) {
@@ -187,7 +187,7 @@ public:
             if (isFrame == 60.0f) al::tryEmitEffect(player, "Land", nullptr);
         }
         else if (isLow || anim->isAnim("SwingAttack")) {
-            applyLunge(player, 2.0f, 5.0f);
+            applyLunge(player, 5.0f, 3.75f);
             if (isLow && !rs::isOnGround(player, player->mCollider)) { al::setNerve(state, getNerveAt(nrvSpinCapFall)); return;}
         }
         else if ((anim->isAnim("RabbitGet") && isFrame == 7.0f) || (anim->isAnim("Kick") && isFrame == 2.0f)) al::validateHitSensor(state->mActor, "Punch");

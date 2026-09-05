@@ -200,12 +200,19 @@ inline bool hasSensor(const al::LiveActor* actor, Fns... checks) {
 
 const uintptr_t spinCapNrvOffset = 0x1D78940;
 const uintptr_t nrvSpinCapFall = 0x1D7ff70;
+
+const uintptr_t nrvHakoniwaBind = 0x1D789E0;
+const uintptr_t nrvHakoniwaEndHack = 0x1D789D8;
 const uintptr_t nrvHakoniwaFall = 0x1D78910;
+const uintptr_t nrvHakoniwaHeadSliding = 0x1D78980;
 const uintptr_t nrvHakoniwaHipDrop = 0x1D78978;
 const uintptr_t nrvHakoniwaJump = 0x1D78948;
+const uintptr_t nrvHakoniwaLongJump = 0x1D78988;
+const uintptr_t nrvHakoniwaPoleClimb = 0x1D78970;
 const uintptr_t nrvHakoniwaRun = 0x1D78928;
 const uintptr_t nrvHakoniwaSquat = 0x1D78920;
 const uintptr_t nrvHakoniwaWait = 0x1D78918;
+const uintptr_t nrvHakoniwaWallAir = 0x1D78958;
 
 // =========================================================
 //                        FLAGS
@@ -239,6 +246,7 @@ inline bool isPunchRight = false;
 inline bool isJumpPunchActive = false;
 inline bool isDoubleJump = false;
 inline bool isDoubleJumpConsume = false;
+inline bool isNotFloat = false;
 inline bool isSuperRunningOnSurface = false;
 inline bool isAntiGravity = false;
 
@@ -282,10 +290,16 @@ inline int drillStep = -1;
 inline int drillSensorRemaining = -1; // hitbox lingers N frames after drill pop
 inline int guardWindow = 0; // frames left to parry
 inline int isCapeActive = -1;
+inline int isDashDelay = 0; // counts up while R is held and running, dash engages at 120 (2s)
 inline int isMarioActive = 0; // 0 = none, 1 = enabling, -1 = disabling
 
-inline float glideLean = 0.0f;
-inline float glidePitch = 0.0f;
+// Constants
+const f32 MIN_SPEED_RUN_ON_WATER = 15.0f;
+const sead::Color4u8 paintClear(0, 0, 0, 0);
+inline sead::Vector3f glideRot = {0.0f, 0.0f, 0.0f};
+inline sead::Vector3f legScale = {1.0f, 1.0f, 1.0f};
+
+// Kart modifiers
 inline float hoverBlend = 0.0f; // 0 = grounded, 1 = hover
 inline float wheelTilt = 0.0f;
 inline float wheelSpin = 0.0f;
@@ -294,11 +308,6 @@ inline float propellerSpeed = 0.0f;
 inline float propellerOffset = 0.0f;
 inline sead::Quatf wheelSteerQuat = sead::Quatf::unit;
 inline sead::Vector3f propellerScale = {0.0f, 0.0f, 0.0f};
-
-// Constants
-const f32 MIN_SPEED_RUN_ON_WATER = 15.0f;
-const sead::Color4u8 paintClear(0, 0, 0, 0);
-inline sead::Vector3f legScale = {1.0f, 1.0f, 1.0f};
 
 // =========================================================
 //                       HELPERS

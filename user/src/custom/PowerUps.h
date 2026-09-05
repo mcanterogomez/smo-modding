@@ -39,14 +39,11 @@ namespace PowerUps {
 
 	inline void executeInitPlayer(PlayerActorHakoniwa* thisPtr, const al::ActorInitInfo* actorInfo, const PlayerInitInfo* playerInfo) {
 		auto* model = thisPtr->mModelHolder->findModelActor("Normal");
-		// Clear joint modifiers on Init
-		glideLean = 0.0f;
-		glidePitch = 0.0f;
+		// Clear joint modifiers
+		glideRot = {0.0f, 0.0f, 0.0f};
 
-		// Handle joint rotation
-		al::initJointLocalYRotator(model, &glideLean, "JointRoot");
-		al::initJointLocalZRotator(model, &glidePitch, "Spine1");
-		// Handle joint scaling
+		// Handle joint modifiers
+		al::initJointLocalRotator(model, &glideRot, "JointRoot");
 		al::initJointLocalScaleController(model, &legScale, "LegL1");
 		al::initJointLocalScaleController(model, &legScale, "LegR1");
 
@@ -166,17 +163,76 @@ namespace PowerUps {
 		// Fireball / Iceball / Blaster
 		PlayerFireBall::update(thisPtr);
 
-		bool isGliding = al::isActionPlaying(model, "Glide") || al::isActionPlaying(model, "GlideAlt")
-			|| al::isActionPlaying(model, "GlideFloatStart") || al::isActionPlaying(model, "GlideFloat") || al::isActionPlaying(model, "GlideFloatSuper")
-			|| al::isActionPlaying(model, "JumpBroad8") || al::isActionPlaying(model, "JumpBroad8Alt");
+		bool isGlide = al::isActionPlaying(model, "Glide");
+		bool isGliding = isGlide || al::isActionPlaying(model, "JumpBroad8") || al::isActionPlaying(model, "GlideFloatStart")
+			|| al::isActionPlaying(model, "GlideFloat") || al::isActionPlaying(model, "GlideFloatSuper");
+		bool isFloating = isTanooki && al::isActionPlaying(model, "GlideFloat") && !al::isNerve(thisPtr, getNerveAt(nrvHakoniwaHeadSliding));
+
+		// Handle logic for Tanooki suit
+		if (isTanooki) {
+			const bool isFloatInput = al::isPadHoldA(-1) || al::isPadHoldB(-1);
+			if (!isFloatInput) isNotFloat = false;
+
+			const al::Nerve* currentNerve = thisPtr->getNerveKeeper()->getCurrentNerve();
+			const al::Nerve* fallNerve = getNerveAt(nrvHakoniwaFall);
+
+			const bool canFloat = !onGround && isFloatInput && !isNotFloat && al::calcSpeedV(thisPtr) < 0.0f
+				&& (currentNerve == fallNerve || currentNerve == getNerveAt(nrvHakoniwaJump)
+					|| currentNerve == getNerveAt(nrvHakoniwaLongJump) || currentNerve == getNerveAt(nrvHakoniwaPoleClimb)
+					|| currentNerve == getNerveAt(nrvHakoniwaBind) || currentNerve == getNerveAt(nrvHakoniwaEndHack)
+					|| (currentNerve == getNerveAt(nrvHakoniwaWallAir) && !rs::isCollidedWall(thisPtr->mCollider)));
+
+			if (canFloat) {
+				if (currentNerve != fallNerve) al::setNerve(thisPtr, fallNerve); // force Fall, hand off the frame
+				else if (!anim->isAnim("GlideFloat")) anim->startAnim("GlideFloat");
+				else { al::setVelocityY(thisPtr, 0.0f); al::limitVelocityH(thisPtr, 7.5f); }
+			}
+			else if (isFloating && currentNerve == fallNerve) al::setNerve(thisPtr, fallNerve);
+
+			auto* tail = al::tryGetSubActor(model, "尻尾");
+
+			if (tail && al::isAlive(tail)) {
+				if (isGliding && !al::isActionPlaying(tail, "TailSpin")) {
+					al::tryStartAction(tail, "TailSpin");
+					al::tryEmitEffect(model, "TailSpin", nullptr);
+					al::tryStartSe(thisPtr, "SpinJumpDownFall");
+				}
+				else if (!isGliding && al::isActionPlaying(tail, "TailSpin")) {
+					al::tryStartAction(tail, "Wait");
+					al::tryDeleteEffect(model, "TailSpin");
+					al::tryStopSe(thisPtr, "SpinJumpDownFall", -1, nullptr);
+				}
+			}
+		}
+
+		// Handle logic for Cape suits
+		auto* cape = al::tryGetSubActor(model, "ケープ");
+		isCapeOn = cape && al::isAlive(cape);
+
+		if (isCapeOn) {
+			if (isGlide && !al::isActionPlaying(cape, "Glide")) al::tryStartAction(cape, "Glide");
+			else if (!isGlide && al::isActionPlaying(cape, "Glide")) al::tryStartAction(cape, "Wait");
+		}
+		// Handle cape spawn and despawn
+		if (cape && (isMario || isBrawl)) {
+			bool capeTimer = !isGliding && isActive && isCapeActive > 0 && --isCapeActive == 0;
+
+			if (!isCapeOn) isCapeActive = -1;
+			else if (isMarioActive == -1 || capeTimer) {
+				cape->kill();
+				al::tryEmitEffect(model, "AppearBloom", nullptr);
+				al::tryStartSe(thisPtr, "Bloom");
+				isCapeActive = -1;
+			}
+		}
 
 		// Handle Glide Gauge
-		if (isGauge && !isSuper) {
+		if (isGauge && !isFloating && !isSuper) {
 			static bool wasInAir = false;
 			static bool wasStartup = false;
 			static bool hadStartup = false;
 			bool inAir = !onGround && !isWater;
-			bool isStartup = al::isActionPlaying(model, "JumpBroad8") || al::isActionPlaying(model, "JumpBroad8Alt");
+			bool isStartup = al::isActionPlaying(model, "JumpBroad8");
 
 			// Landing
 			if (wasInAir && !inAir && isGauge->isAlive()) {
@@ -200,41 +256,12 @@ namespace PowerUps {
 			wasInAir = inAir;
 		}
 
-		// Handle Cape spawning
-		auto* cape = al::tryGetSubActor(model, "ケープ");
-		isCapeOn = cape && al::isAlive(cape);
-		bool capeTimer = (isMario || isBrawl) && !isGliding && isActive && isCapeActive > 0 && --isCapeActive == 0;
-
-		if (cape && !isCapeOn) isCapeActive = -1;
-		if (cape && isCapeOn && (isMarioActive == -1 || capeTimer)) {
-			cape->kill();
-			al::tryEmitEffect(model, "AppearBloom", nullptr);
-			al::tryStartSe(thisPtr, "Bloom");
-			isCapeActive = -1;
-		}
-
-		// Handle tail logic for Tanooki suit
-		auto* tail = al::tryGetSubActor(model, "尻尾");
-		if (isTanooki && tail && al::isAlive(tail)) {
-			if (isGliding && !al::isActionPlaying(tail, "TailSpin")) {
-				al::tryStartAction(tail, "TailSpin");
-				al::tryEmitEffect(model, "TailSpin", nullptr);
-				al::tryStartSe(thisPtr, "SpinJumpDownFall");
-			}
-			else if (!isGliding && al::isActionPlaying(tail, "TailSpin")) {
-				al::tryStartAction(tail, "Wait");
-				al::tryDeleteEffect(model, "TailSpin");
-				al::tryStopSe(thisPtr, "SpinJumpDownFall", -1, nullptr);
-			}
-		}
-
 		// Handle logic for Metal suit
 		if (isMetal) {
 			if (thisPtr->mInfo->mIsMoon) applyMetalMarioMoonConst(thisPtr->mConst);
 			else applyMetalMarioConst(thisPtr->mConst);
-
-			if (thisPtr->mJointControlKeeper) thisPtr->mJointControlKeeper->resetPartsDynamics(); // Stop physics for nose/mustache
-
+			// Stop physics for nose/mustache
+			if (thisPtr->mJointControlKeeper) thisPtr->mJointControlKeeper->resetPartsDynamics();
 			// Ground speed is scaled in PlayerActionGroundMoveControlUpdate
 			if (!onGround && isSubmerged(thisPtr)) al::scaleVelocityHV(thisPtr, 0.95f, al::getVelocity(thisPtr).y < 0.0f ? 0.85f : 1.0f); // floaty descent
 		}
@@ -307,14 +334,22 @@ namespace PowerUps {
 		}
 		else { stillFrames = 0; healFrames = 0; }
 
-		#ifdef ALLOW_DASH // Handles dash animations and effects
+		#ifdef ALLOW_DASH // Handles the dash windup, animations and effects
 			bool isMoving = al::isActionPlaying(model, "Move")
 				|| al::isActionPlaying(model, "MoveClassic")
 				|| al::isActionPlaying(model, "MoveBrawl")
 				|| al::isActionPlaying(model, "MoveSuper");
 
+			// Charge builds while running with R held; once charged, half a second below a walk clears it
+			static int slowFrames = 0;
+			if (speedH >= thisPtr->mConst->mRunBorderSpeed || isDashDelay < 120) slowFrames = 0;
+			else slowFrames++;
+
+			if (!al::isPadHoldR(-1) || slowFrames > 30) isDashDelay = 0;
+			else if (isDashDelay < 120 && isMoving && !isActionBusy()) isDashDelay++;
+
 			static bool wasDash = false;
-			bool isDashNow = al::isPadHoldR(-1) && isMoving && !isActionBusy() && speedH >= dashBorder;
+			bool isDashNow = isDashDelay >= 120 && speedH >= dashBorder;
 
 			if (isDashNow && !wasDash) {
 				const char* fx = isSuper ? "AccelSecond" : "Accel";
@@ -358,18 +393,21 @@ namespace PowerUps {
 		}
 	};
 
-	// Brawl double jump
+	// Double jump
 	struct PlayerActorHakoniwaExeJump : public mallow::hook::Trampoline<PlayerActorHakoniwaExeJump> {
 		static void Callback(PlayerActorHakoniwa* thisPtr) {
 			bool wasGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
 			bool wasWater = al::isInWater(thisPtr);
 
 			Orig(thisPtr);
-			if (!isBrawl) return;
 
 			auto* anim = thisPtr->mAnimator;
 			auto* model = thisPtr->mModelHolder->findModelActor("Normal");
 			auto* keeper = static_cast<al::IUseEffectKeeper*>(model);
+			auto* cape = al::tryGetSubActor(model, "ケープ");
+
+			// Mario needs the cape out, Brawl always has it
+			if (!isBrawl && !(isMario && cape && al::isAlive(cape))) return;
 
 			bool isGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
 			bool isWater = al::isInWater(thisPtr);
@@ -385,7 +423,7 @@ namespace PowerUps {
 				al::setNerve(thisPtr, getNerveAt(nrvHakoniwaJump));
 			}
 			if (isDoubleJumpConsume && al::isFirstStep(thisPtr)) {
-				anim->startAnim("PoleHandStandJump");
+				anim->startAnim(isBrawl ? "PoleHandStandJump" : "JumpBroad5");
 				isDoubleJumpConsume = false;
 			}
 		}
@@ -418,19 +456,19 @@ namespace PowerUps {
 			if (vy < -2.5f) al::setVelocityY(thisPtr, -2.5f);
 
 			float speed = al::calcSpeed(thisPtr);
+			float lean = 0.0f;
+			bool isGlide = anim->isAnim("Glide");
 
-			if (anim->isAnim("Glide")) {
+			if (isGlide) {
 				sead::Vector3f camSide, marioSide;
 				al::calcCameraSideDir(&camSide, thisPtr, 0);
 				al::calcSideDir(&marioSide, thisPtr);
-
-				float localLean = camSide.dot(marioSide) * al::getLeftStick(-1).x;
-				glideLean = al::lerpValue(glideLean, localLean * -50.0f, 0.025f);
-				glidePitch = al::lerpValue(glidePitch, fabsf(localLean) * -25.0f, 0.025f);
-			} else {
-				glideLean = al::lerpValue(glideLean, 0.0f, 0.2f);
-				glidePitch = al::lerpValue(glidePitch, 0.0f, 0.2f);
+				lean = camSide.dot(marioSide) * al::getLeftStick(-1).x;
 			}
+
+			// Lean drives yaw and roll, pitch follows its magnitude at a shallower angle
+			sead::Vector3f target = {fabsf(lean) * -12.5f, lean * -32.5f, lean * -32.5f};
+			glideRot += (target - glideRot) * (isGlide ? 0.025f : 0.2f);
 
 			if (al::isFirstStep(thisPtr)) {
 				if ((isMario || isBrawl) && cape && al::isDead(cape)) {
@@ -442,7 +480,7 @@ namespace PowerUps {
 			}
 			else if (anim->isAnimEnd() && anim->isAnim("JumpBroad8")) anim->startAnim("Glide");
 			else if (speed < 10.f) {
-				if (anim->isAnim("Glide")) anim->startAnim("GlideFloatStart");
+				if (isGlide) anim->startAnim("GlideFloatStart");
 				if (anim->isAnimEnd() && anim->isAnim("GlideFloatStart")) anim->startAnim("GlideFloat");
 			}
 
@@ -470,9 +508,9 @@ namespace PowerUps {
 	// Resets glide joints and arms the cape despawn timer
 	struct PlayerHeadSlidingKill : public mallow::hook::Trampoline<PlayerHeadSlidingKill> {
 		static void Callback(PlayerStateHeadSliding* state) {
-			glideLean = 0.0f;
-			glidePitch = 0.0f;
+			glideRot = {0.0f, 0.0f, 0.0f};
 			isCapeActive = 1200;
+			isNotFloat = true;
 
 			if (state->mAnimator) state->mAnimator->clearUpperBodyAnim();
 			Orig(state);
@@ -506,7 +544,7 @@ namespace PowerUps {
 		}
 	};
 
-	// Dash raises the ground speed cap, wading scales the curve and blocks dashing
+	// Dash ramps the ground speed cap through the windup, wading scales the curve and blocks dashing
 	struct PlayerActionGroundMoveControlUpdate : public mallow::hook::Trampoline<PlayerActionGroundMoveControlUpdate> {
 		static float Callback(PlayerActionGroundMoveControl* thisPtr) {
 			float update = Orig(thisPtr);
@@ -516,9 +554,11 @@ namespace PowerUps {
 
 			float maxSpeed = 14.0f;
 			#ifdef ALLOW_DASH
-				bool isDash = !isWading && al::isPadHoldR(-1) && !isActionBusy();
-				if (isSuper && isDash) maxSpeed = 28.0f;
-				else if (isDash) maxSpeed = 21.0f;
+				if (!isWading && isDashDelay > 0 && !isActionBusy()) {
+					float full = isSuper ? 28.0f : 21.0f;
+					if (isDashDelay >= 120) maxSpeed = full; // Windup sits halfway to the dash tier, held under the border so the anim stays on Dash
+					else maxSpeed = sead::Mathf::min((14.0f + full) * 0.5f, thisPtr->mConst->getDashFastBorderSpeed() - 0.5f);
+				}
 			#endif
 			if (isWading) maxSpeed *= 0.6f; // wading: scale the target so stick tilt still prorates
 

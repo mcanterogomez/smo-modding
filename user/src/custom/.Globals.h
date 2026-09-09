@@ -290,7 +290,7 @@ inline int drillStep = -1;
 inline int drillSensorRemaining = -1; // hitbox lingers N frames after drill pop
 inline int guardWindow = 0; // frames left to parry
 inline int isCapeActive = -1;
-inline int isDashDelay = 0; // counts up while R is held and running, dash engages at 120 (2s)
+inline int isDashDelay = -1; // -1 = idle, counts down while R is held and running, dash engages at 0
 inline int isMarioActive = 0; // 0 = none, 1 = enabling, -1 = disabling
 
 // Constants

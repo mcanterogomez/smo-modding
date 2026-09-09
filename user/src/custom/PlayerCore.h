@@ -262,20 +262,14 @@ namespace PlayerCore {
 
             // Handle Taunt actions
             #ifdef ALLOW_TAUNT
-                if (!isMove
-                    && (al::isNerve(thisPtr, getNerveAt(nrvHakoniwaWait)) || al::isNerve(thisPtr, getNerveAt(nrvHakoniwaSquat)))
-                    && !al::isNerve(thisPtr, &TauntLeftNrv) && !al::isNerve(thisPtr, &TauntRightNrv)
+                if ((al::isNerve(thisPtr, getNerveAt(nrvHakoniwaWait)) || al::isNerve(thisPtr, getNerveAt(nrvHakoniwaSquat)))
                     && !isActionBusy()
                 ) {
                     if (al::isPadTriggerLeft(-1)) al::setNerve(thisPtr, &TauntLeftNrv);
                     else if (al::isPadTriggerRight(-1)) al::setNerve(thisPtr, &TauntRightNrv);
                 }
                 if (al::isNerve(thisPtr, &TauntLeftNrv)
-                ) {
-                    if (anim->isAnim("WearEnd")) { al::tryStopSe(thisPtr, "WearEnd", -1, nullptr); al::tryStopSe(thisPtr, "WearEndSetCostume", -1, nullptr); }
-                }
-                if (!al::isNerve(thisPtr, &TauntLeftNrv)
-                    && !al::isNerve(thisPtr, &TauntRightNrv)) al::tryDeleteEffect(model, "BonfireSuper");
+                    && anim->isAnim("WearEnd")) { al::tryStopSe(thisPtr, "WearEnd", -1, nullptr); al::tryStopSe(thisPtr, "WearEndSetCostume", -1, nullptr); }
             #endif
         }
     };

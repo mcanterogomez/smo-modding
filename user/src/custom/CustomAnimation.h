@@ -30,7 +30,7 @@ namespace CustomAnimation {
 
 		auto is = [&](const char* other) { return al::isEqualString(name, other); };
 
-		if (isWeaponOn && is("Wait")) return "BattleWait";
+		if (isWeaponOn && is("Wait")) return "BlastWait";
 
 		if (isFly) {
 			if (is("GlideFloat")) return "GlideFloatSuper";

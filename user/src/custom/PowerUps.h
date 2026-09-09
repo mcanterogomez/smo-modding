@@ -122,6 +122,9 @@ namespace PowerUps {
 		bool isFlicker = damage && damage->mDamageInvalidCount > 0;
 		bool isActive = !isFlicker && !isHacking() && !rs::isActiveDemo(thisPtr);
 
+		// Re-arms the double jump; the Jump/Fall hooks never see the grounded frames
+		if (onGround || isWater) { isDoubleJump = false; isDoubleJumpConsume = false; }
+
 		f32 speedH = al::calcSpeedH(thisPtr);
 		f32 dashBorder = thisPtr->mConst->getDashFastBorderSpeed();
 
@@ -166,38 +169,42 @@ namespace PowerUps {
 		bool isGlide = al::isActionPlaying(model, "Glide");
 		bool isGliding = isGlide || al::isActionPlaying(model, "JumpBroad8") || al::isActionPlaying(model, "GlideFloatStart")
 			|| al::isActionPlaying(model, "GlideFloat") || al::isActionPlaying(model, "GlideFloatSuper");
-		bool isFloating = isTanooki && al::isActionPlaying(model, "GlideFloat") && !al::isNerve(thisPtr, getNerveAt(nrvHakoniwaHeadSliding));
+		bool isFloating = al::isActionPlaying(model, "TailFloat");
 
 		// Handle logic for Tanooki suit
 		if (isTanooki) {
-			const bool isFloatInput = al::isPadHoldA(-1) || al::isPadHoldB(-1);
-			if (!isFloatInput) isNotFloat = false;
+			if (onGround) isNotFloat = false; // a glide blocks the float for the rest of the airtime
 
+			// Float: hold A/B while descending to hover
 			const al::Nerve* currentNerve = thisPtr->getNerveKeeper()->getCurrentNerve();
 			const al::Nerve* fallNerve = getNerveAt(nrvHakoniwaFall);
 
-			const bool canFloat = !onGround && isFloatInput && !isNotFloat && al::calcSpeedV(thisPtr) < 0.0f
-				&& (currentNerve == fallNerve || currentNerve == getNerveAt(nrvHakoniwaJump)
-					|| currentNerve == getNerveAt(nrvHakoniwaLongJump) || currentNerve == getNerveAt(nrvHakoniwaPoleClimb)
-					|| currentNerve == getNerveAt(nrvHakoniwaBind) || currentNerve == getNerveAt(nrvHakoniwaEndHack)
-					|| (currentNerve == getNerveAt(nrvHakoniwaWallAir) && !rs::isCollidedWall(thisPtr->mCollider)));
+			const bool canFloat = !onGround && !isNotFloat && al::calcSpeedV(thisPtr) < 0.0f && (al::isPadHoldA(-1) || al::isPadHoldB(-1))
+				&& (currentNerve == fallNerve || currentNerve == getNerveAt(nrvHakoniwaJump));
 
 			if (canFloat) {
 				if (currentNerve != fallNerve) al::setNerve(thisPtr, fallNerve); // force Fall, hand off the frame
-				else if (!anim->isAnim("GlideFloat")) anim->startAnim("GlideFloat");
+				else if (!isFloating) anim->startAnim("TailFloat");
 				else { al::setVelocityY(thisPtr, 0.0f); al::limitVelocityH(thisPtr, 7.5f); }
 			}
 			else if (isFloating && currentNerve == fallNerve) al::setNerve(thisPtr, fallNerve);
 
+			// TailFloat SE loops every 15 frames
+			static int floatSeTimer = 0;
+			if (!isFloating) floatSeTimer = 0;
+			else if (--floatSeTimer <= 0) { al::tryStartSe(model, "TailFloat"); floatSeTimer = 15; }
+
+			// Tail spins through both the glide and the float
 			auto* tail = al::tryGetSubActor(model, "尻尾");
+			bool spinTail = isGliding || isFloating;
 
 			if (tail && al::isAlive(tail)) {
-				if (isGliding && !al::isActionPlaying(tail, "TailSpin")) {
+				if (spinTail && !al::isActionPlaying(tail, "TailSpin")) {
 					al::tryStartAction(tail, "TailSpin");
 					al::tryEmitEffect(model, "TailSpin", nullptr);
 					al::tryStartSe(thisPtr, "SpinJumpDownFall");
 				}
-				else if (!isGliding && al::isActionPlaying(tail, "TailSpin")) {
+				else if (!spinTail && al::isActionPlaying(tail, "TailSpin")) {
 					al::tryStartAction(tail, "Wait");
 					al::tryDeleteEffect(model, "TailSpin");
 					al::tryStopSe(thisPtr, "SpinJumpDownFall", -1, nullptr);
@@ -227,7 +234,7 @@ namespace PowerUps {
 		}
 
 		// Handle Glide Gauge
-		if (isGauge && !isFloating && !isSuper) {
+		if (isGauge && !isSuper) {
 			static bool wasInAir = false;
 			static bool wasStartup = false;
 			static bool hadStartup = false;
@@ -335,27 +342,25 @@ namespace PowerUps {
 		else { stillFrames = 0; healFrames = 0; }
 
 		#ifdef ALLOW_DASH // Handles the dash windup, animations and effects
-			bool isMoving = al::isActionPlaying(model, "Move")
-				|| al::isActionPlaying(model, "MoveClassic")
-				|| al::isActionPlaying(model, "MoveBrawl")
-				|| al::isActionPlaying(model, "MoveSuper");
+			bool isRunning = al::isNerve(thisPtr, getNerveAt(nrvHakoniwaRun));
 
-			// Charge builds while running with R held; once charged, half a second below a walk clears it
+			// Charge winds down while running with R held, then holds at 0
 			static int slowFrames = 0;
-			if (speedH >= thisPtr->mConst->mRunBorderSpeed || isDashDelay < 120) slowFrames = 0;
-			else slowFrames++;
+			if (speedH >= thisPtr->mConst->mRunBorderSpeed || isDashDelay != 0) slowFrames = 0;
+			else slowFrames++; // frames spent below a walk while charged
 
-			if (!al::isPadHoldR(-1) || slowFrames > 30) isDashDelay = 0;
-			else if (isDashDelay < 120 && isMoving && !isActionBusy()) isDashDelay++;
+			if (!al::isPadHoldR(-1) || slowFrames > 30) isDashDelay = -1; // 30: grace before a slowdown drops the charge
+			else if (isRunning && !isActionBusy() && isDashDelay != 0) isDashDelay = isDashDelay < 0 ? 119 : isDashDelay - 1; // 119: windup length, 120 frames (2s)
 
+			// One shot per dash, re-armed by leaving the run, dropping the charge or braking — terrain breaks none of them
 			static bool wasDash = false;
-			bool isDashNow = isDashDelay >= 120 && speedH >= dashBorder;
-
-			if (isDashNow && !wasDash) {
+			if (!isRunning || isDashDelay != 0 || slowFrames > 0) wasDash = false;
+			else if (!wasDash && speedH >= dashBorder) {
 				const char* fx = isSuper ? "AccelSecond" : "Accel";
-				if (!al::isEffectEmitting(model, fx)) { al::tryStartSe(thisPtr, fx); al::tryEmitEffect(model, fx, nullptr); }
+				al::tryStartSe(thisPtr, fx);
+				al::tryEmitEffect(model, fx, nullptr);
+				wasDash = true;
 			}
-			wasDash = isDashNow;
 		#endif
 	}
 
@@ -393,37 +398,34 @@ namespace PowerUps {
 		}
 	};
 
-	// Double jump
-	struct PlayerActorHakoniwaExeJump : public mallow::hook::Trampoline<PlayerActorHakoniwaExeJump> {
+	// Double jump, from the Jump and Fall nerves
+	template <int Variant>
+	struct PlayerActorHakoniwaDoubleJump : public mallow::hook::Trampoline<PlayerActorHakoniwaDoubleJump<Variant>> {
+		using Base = mallow::hook::Trampoline<PlayerActorHakoniwaDoubleJump<Variant>>;
 		static void Callback(PlayerActorHakoniwa* thisPtr) {
-			bool wasGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
-			bool wasWater = al::isInWater(thisPtr);
+			Base::Orig(thisPtr);
 
-			Orig(thisPtr);
-
-			auto* anim = thisPtr->mAnimator;
 			auto* model = thisPtr->mModelHolder->findModelActor("Normal");
-			auto* keeper = static_cast<al::IUseEffectKeeper*>(model);
 			auto* cape = al::tryGetSubActor(model, "ケープ");
+			bool isCape = isFeather || (isMario && cape && al::isAlive(cape));
 
 			// Mario needs the cape out, Brawl always has it
-			if (!isBrawl && !(isMario && cape && al::isAlive(cape))) return;
+			if (!isBrawl && !isCape) return;
 
-			bool isGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
-			bool isWater = al::isInWater(thisPtr);
-			bool isAir = !isGround && !isWater;
-
-			if (wasWater || (wasGround && isAir)) { isDoubleJump = false; isDoubleJumpConsume = false; }
-
-			if (isAir && !isDoubleJump && (al::isPadTriggerA(-1) || al::isPadTriggerB(-1))) {
+			if (!isDoubleJump && !rs::isOnGround(thisPtr, thisPtr->mCollider) && (al::isPadTriggerA(-1) || al::isPadTriggerB(-1))
+			) {
 				isDoubleJump = true;
 				isDoubleJumpConsume = true;
 
-				al::tryEmitEffect(keeper, "DoubleJump", nullptr);
+				al::setVelocityY(thisPtr, 0.0f); // the Jump nerve lands next frame, a touchdown before then would eat it
+				(*reinterpret_cast<PlayerContinuousJump**>(reinterpret_cast<uintptr_t>(thisPtr) + 0x1B8))->clear(); // clear jump chain to always reset power
+				if (isCape) al::tryStartSe(thisPtr, "CapeFloat");
+				al::tryEmitEffect(model, "DoubleJump", nullptr);
 				al::setNerve(thisPtr, getNerveAt(nrvHakoniwaJump));
 			}
+
 			if (isDoubleJumpConsume && al::isFirstStep(thisPtr)) {
-				anim->startAnim(isBrawl ? "PoleHandStandJump" : "JumpBroad5");
+				thisPtr->mAnimator->startAnim(isCape ? "DoubleJump" : "PoleHandStandJump");
 				isDoubleJumpConsume = false;
 			}
 		}
@@ -448,14 +450,8 @@ namespace PowerUps {
 			if (!isMario && !isFeather && !isTanooki && !isFly && !isBrawl && !isSuper) return;
 
 			auto* anim = thisPtr->mAnimator;
-			auto* model = thisPtr->mModelHolder->findModelActor("Normal");
-			auto* cape = al::tryGetSubActor(model, "ケープ");
-			auto* keeper = static_cast<al::IUseEffectKeeper*>(model);
+			if (al::getVelocity(thisPtr).y < -2.5f) al::setVelocityY(thisPtr, -2.5f);
 
-			float vy = al::getVelocity(thisPtr).y;
-			if (vy < -2.5f) al::setVelocityY(thisPtr, -2.5f);
-
-			float speed = al::calcSpeed(thisPtr);
 			float lean = 0.0f;
 			bool isGlide = anim->isAnim("Glide");
 
@@ -471,15 +467,18 @@ namespace PowerUps {
 			glideRot += (target - glideRot) * (isGlide ? 0.025f : 0.2f);
 
 			if (al::isFirstStep(thisPtr)) {
+				auto* model = thisPtr->mModelHolder->findModelActor("Normal");
+				auto* cape = al::tryGetSubActor(model, "ケープ");
+
 				if ((isMario || isBrawl) && cape && al::isDead(cape)) {
 					cape->appear();
-					al::tryEmitEffect(keeper, "AppearBloom", nullptr);
-					al::tryStartSe(thisPtr, "Bloom");
+					al::tryEmitEffect(model, "Appear", nullptr);
+					al::tryStartSe(thisPtr, "CapeGet");
 				}
 				anim->startAnim("JumpBroad8");
 			}
 			else if (anim->isAnimEnd() && anim->isAnim("JumpBroad8")) anim->startAnim("Glide");
-			else if (speed < 10.f) {
+			else if (al::calcSpeed(thisPtr) < 10.f) {
 				if (isGlide) anim->startAnim("GlideFloatStart");
 				if (anim->isAnimEnd() && anim->isAnim("GlideFloatStart")) anim->startAnim("GlideFloat");
 			}
@@ -552,11 +551,11 @@ namespace PowerUps {
 			if (isHacking()) return update;
 			bool isWading = isMetal && isSubmerged(isHakoniwa);
 
-			float maxSpeed = 14.0f;
+			float maxSpeed = 14.0f; // walk/run cap
 			#ifdef ALLOW_DASH
-				if (!isWading && isDashDelay > 0 && !isActionBusy()) {
-					float full = isSuper ? 28.0f : 21.0f;
-					if (isDashDelay >= 120) maxSpeed = full; // Windup sits halfway to the dash tier, held under the border so the anim stays on Dash
+				if (!isWading && isDashDelay >= 0 && !isActionBusy()) {
+					float full = isSuper ? 28.0f : 21.0f; // dash tier
+					if (isDashDelay == 0) maxSpeed = full; // Windup sits halfway to the dash tier, held under the border so the anim stays on Dash
 					else maxSpeed = sead::Mathf::min((14.0f + full) * 0.5f, thisPtr->mConst->getDashFastBorderSpeed() - 0.5f);
 				}
 			#endif
@@ -661,7 +660,8 @@ namespace PowerUps {
 		PlayerCarryKeeperStartCarry::InstallAtSymbol("_ZN17PlayerCarryKeeper10startCarryEPN2al9HitSensorE");
 
 		// Handles Double Jump
-		PlayerActorHakoniwaExeJump::InstallAtSymbol("_ZN19PlayerActorHakoniwa7exeJumpEv");
+		PlayerActorHakoniwaDoubleJump<0>::InstallAtSymbol("_ZN19PlayerActorHakoniwa7exeJumpEv");
+		PlayerActorHakoniwaDoubleJump<1>::InstallAtSymbol("_ZN19PlayerActorHakoniwa7exeFallEv");
 		PlayerStateJumpTryCountUp::InstallAtSymbol("_ZN15PlayerStateJump24tryCountUpContinuousJumpEP20PlayerContinuousJump");
 
 		// Handles Glide

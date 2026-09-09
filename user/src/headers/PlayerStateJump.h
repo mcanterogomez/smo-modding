@@ -18,11 +18,15 @@ class PlayerCounterForceRun;
 class PlayerJointControlKeeper;
 class IUsePlayerCollision;
 class PlayerTrigger;
-class PlayerContinuousJump;
 class PlayerAnimator;
 class PlayerActionDiveInWater;
 class PlayerActionAirMoveControl;
 class HackCap;
+
+class PlayerContinuousJump {
+public:
+    void clear();
+};
 
 class PlayerStateJump : public al::ActorStateBase {
 public:

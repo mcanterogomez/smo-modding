@@ -43,6 +43,15 @@ inline void applyHomeIn(al::LiveActor* player, al::LiveActor* target) {
     *vel = fwd * hSpeed + grav * gravComp;
 }
 
+// Handle stopping on the ground plane
+inline void applyGroundStop(PlayerActorHakoniwa* player) {
+	sead::Vector3f normal;
+	rs::calcGroundNormalOrUpDir(&normal, player, player->mCollider);
+	sead::Vector3f vel = al::getVelocity(player);
+
+	al::setVelocity(player, normal * vel.dot(normal)); // drop the tangential slide, keep the normal component so gravity and the ground snap still work
+}
+
 // Custom Nerves
 class PlayerStateSpinCapNrvGalaxySpinGround; 
 extern PlayerStateSpinCapNrvGalaxySpinGround GalaxySpinGround; 
@@ -154,7 +163,7 @@ public:
                 anim->startAnim(isPunchRight ? "JumpPunchL" : "JumpPunchR");
                 return;
             }
-            if (isFrame >= anim->getAnimFrameMax() - 8.0f && isPadTriggerGalaxySpin(-1)) { // cancel with punch
+            if (isFrame >= anim->getAnimFrameMax() - 12.0f && isPadTriggerGalaxySpin(-1)) { // cancel with punch
                 hitBufferCount = 0;
                 al::setNerve(state, &GalaxySpinGround);
                 return;
@@ -277,13 +286,12 @@ public:
 
         if (al::isFirstStep(player)) {
             tryEndSubAnim(anim);
-
-            if (isFire || isIce || isBrawl) anim->startAnim("WearEndBrawl");
-            else if (isMetal || isSuper) anim->startAnim("WearEndSuper");
-            else anim->startAnim("WearEnd");
+            anim->startAnim((isFire || isIce || isBrawl) ? "WearEndBrawl" : (isMetal || isSuper) ? "WearEndSuper" : "WearEnd");
         }
 
-        if (anim->isAnimEnd()) { al::setNerve(player, getNerveAt(nrvHakoniwaWait)); return; }
+        applyGroundStop(player);
+
+        if (anim->isAnimEnd()) al::setNerve(player, getNerveAt(nrvHakoniwaWait));
     }
 };
 
@@ -294,7 +302,6 @@ public:
         auto* anim = player->mAnimator;
         auto* model = player->mModelHolder->findModelActor("Normal");
         auto* cape = al::tryGetSubActor(model, "ケープ");
-        auto* effect = static_cast<al::IUseEffectKeeper*>(model);
 
         if (al::isFirstStep(player)) {
             tryEndSubAnim(anim);
@@ -302,10 +309,7 @@ public:
             if (isMarioActive == 1) anim->startAnim("TauntSuper");
             else if (isMarioActive == -1) anim->startAnim("AreaWaitSigh");
             else if (player->mInput->isHoldSquat()) {
-                if (isBrawl) {
-                    if (cape && al::isDead(cape)) anim->startAnim("LandJump3");
-                    else anim->startAnim("TauntFeather");
-                }
+                if (isBrawl) anim->startAnim(cape && al::isDead(cape) ? "LandJump3" : "TauntFeather");
                 else if (isFire || isIce || isSuper) anim->startAnim("TauntSuper");
                 else if (isFeather || isTanooki) anim->startAnim("AreaWaitSayCheese");
                 else anim->startAnim("AreaWait64");
@@ -316,46 +320,52 @@ public:
             else anim->startAnim("TauntMario");
         }
 
+        applyGroundStop(player);
+
         if (anim->isAnim("LandJump3")) {
             if (al::isStep(player, 25)) {
                 if (cape) cape->appear();
                 isCapeActive = 1200;
-                al::tryEmitEffect(effect, "AppearBloom", nullptr);
+                al::tryEmitEffect(model, "AppearBloom", nullptr);
                 al::tryStartSe(player, "Bloom");
             }
         }
-        else if (anim->isAnim("TauntFire")
-            || anim->isAnim("TauntIce")) {
+        else if (anim->isAnim("TauntFire") || anim->isAnim("TauntIce")) {
             if (al::isStep(player, 65)) al::tryStartSe(player, "FireOn");
             if (al::isStep(player, 160)) {
                 al::tryStopSe(player, "FireOn", -1, nullptr);
-                if (isIce) al::tryStartSe(player, "IceOff");
-                else al::tryStartSe(player, "FireOff");
+                al::tryStartSe(player, isIce ? "IceOff" : "FireOff");
             }
         }
         else if (anim->isAnim("TauntSuper")) {
             if (isFire) player->mStainControl->recordDamageFire();
-            if (isIce) player->mStainControl->recordIceWater();
+            else if (isIce) player->mStainControl->recordIceWater();
+
             if (al::isStep(player, 14)) {
-                if (isIce) { al::tryEmitEffect(effect, "IceEffect", nullptr); al::tryStartSe(player, "FireOn"); }
+                if (isIce) al::tryEmitEffect(model, "IceEffect", nullptr);
                 if (isMarioActive == 1) { player->mDamageKeeper->invalidate(60); al::tryStartSe(player, "HrPowerUpNormal"); }
-                if (isFire || isSuper || isMarioActive == 1) { al::tryEmitEffect(effect, "BonfireSuper", nullptr); al::tryStartSe(player, "FireOn"); }
+                if (isFire || isSuper || isMarioActive == 1) al::tryEmitEffect(model, "BonfireSuper", nullptr);
                 if (isSuper) {
                     al::tryEmitEffect(player, "InvincibleStart", nullptr);
-                    al::tryEmitEffect(effect, "LandFall", nullptr);
+                    al::tryEmitEffect(model, "LandFall", nullptr);
                     al::tryStartSe(player, "StartInvincible");
                 }
+                if (isFire || isIce || isSuper || isMarioActive == 1) al::tryStartSe(player, "FireOn");
             }
         }
 
-        if (anim->isAnimEnd()) {
-            isMarioActive = 0;
-            al::tryDeleteEffect(effect, "BonfireSuper");
-            al::tryDeleteEffect(effect, "IceEffect");
-            al::tryStopSe(player, "FireOn", -1, nullptr);
-            al::setNerve(player, getNerveAt(nrvHakoniwaWait));
-            return;
-        }
+        if (anim->isAnimEnd()) al::setNerve(player, getNerveAt(nrvHakoniwaWait));
+    }
+
+    // Also covers an interrupted taunt, which never reaches isAnimEnd
+    void executeOnEnd(al::NerveKeeper* keeper) const override {
+        auto* player = keeper->getParent<PlayerActorHakoniwa>();
+        auto* model = player->mModelHolder->findModelActor("Normal");
+
+        isMarioActive = 0;
+        al::tryDeleteEffect(model, "BonfireSuper");
+        al::tryDeleteEffect(model, "IceEffect");
+        al::tryStopSe(player, "FireOn", -1, nullptr);
     }
 };
 

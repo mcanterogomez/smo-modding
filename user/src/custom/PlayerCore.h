@@ -245,7 +245,8 @@ namespace PlayerCore {
                 if (isWater && (!al::isEqualSubString(actionName, "Swim") || al::isEqualSubString(actionName, "Spin")))
                     al::startActionSubActor(model, "顔", "SwimStand");
 
-                if ((anim->isAnim("BattleWait") || isBrawl || isSuper) && !al::isActionPlayingSubActor(model, "顔", "WaitAngry"))
+                bool tauntSmash = al::isActionPlaying(model, "TauntSmash") || al::isActionPlaying(model, "TauntSmash01");
+                if (((isBrawl && !tauntSmash) || isSuper || anim->isAnim("BattleWait")) && !al::isActionPlayingSubActor(model, "顔", "WaitAngry"))
                     al::startActionSubActor(model, "顔", "WaitAngry");
 
                 if (isMetal && !al::isActionPlayingSubActor(model, "顔", "AreaWaitFight"))

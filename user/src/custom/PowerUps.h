@@ -425,7 +425,7 @@ namespace PowerUps {
 			}
 
 			if (isDoubleJumpConsume && al::isFirstStep(thisPtr)) {
-				thisPtr->mAnimator->startAnim(isCape ? "DoubleJump" : "PoleHandStandJump");
+				thisPtr->mAnimator->startAnim(isCape ? "DoubleJump" : "DoubleJumpSmash");
 				isDoubleJumpConsume = false;
 			}
 		}
@@ -473,7 +473,7 @@ namespace PowerUps {
 				if ((isMario || isBrawl) && cape && al::isDead(cape)) {
 					cape->appear();
 					al::tryEmitEffect(model, "Appear", nullptr);
-					al::tryStartSe(thisPtr, "CapeGet");
+					al::tryStartSe(thisPtr, "Appear"); al::tryStartSe(thisPtr, "CapeGet");
 				}
 				anim->startAnim("JumpBroad8");
 			}

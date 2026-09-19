@@ -42,10 +42,10 @@ namespace CustomAnimation {
 			if (is("WearEnd")) return "WearEndSuper";
 		}
 		if (isBrawl) {
-			if (is("BattleWait")) return "WaitBrawlFight";
+			if (is("BattleWait")) return "WaitSmashFight";
 			if (is("JumpDashFast")) return "Jump";
-			if (is("Wait")) return "WaitBrawl";
-			if (is("WearEnd")) return "WearEndBrawl";
+			if (is("Wait")) return "WaitSmash";
+			if (is("WearEnd")) return "WearEndSmash";
 		}
 		if (isSuper) {
 			if (is("BattleWait")) return "WaitSuperFight";
@@ -74,11 +74,11 @@ namespace CustomAnimation {
 			if (is("MofumofuDemoOpening2")) return "MofumofuDemoOpening2Super";
 		}
 
-		if (is("BattleWait")) return "WaitBrawl";
+		if (is("BattleWait")) return "WaitSmash";
 
 		#ifdef ALLOW_DASH
 			if (is("Move") || is("MoveMoon")) {
-				if (isMetal || isBrawl) return "MoveBrawl";
+				if (isMetal || isBrawl) return "MoveSmash";
 				if (isSuper) return "MoveSuper";
 				if (isClassic) return "MoveClassic";
 			}
@@ -96,7 +96,7 @@ namespace CustomAnimation {
 		if (!remapAnim("Wait", anim) && idlePlayed > 2) return nullptr; // Wait is untouched, so vanilla relax exists: each anim once, then one held wait before handing over
 
 		if (isMario && isDefinitve()) return alt ? "AreaWaitView" : "AreaWaitStretch";
-		//if (isBrawl) return alt ? "AreaWaitView" : "AreaWaitStretch";
+		if (isBrawl) return "WaitSmash01";
 		return nullptr;
 	}
 

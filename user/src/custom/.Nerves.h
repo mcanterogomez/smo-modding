@@ -286,7 +286,8 @@ public:
 
         if (al::isFirstStep(player)) {
             tryEndSubAnim(anim);
-            anim->startAnim((isFire || isIce || isBrawl) ? "WearEndBrawl" : (isMetal || isSuper) ? "WearEndSuper" : "WearEnd");
+            anim->startAnim("TauntSmash");
+            //anim->startAnim(isBrawl ? "TauntSmash" : (isMetal || isSuper) ? "WearEndSuper" : "WearEnd");
         }
 
         applyGroundStop(player);
@@ -309,14 +310,11 @@ public:
             if (isMarioActive == 1) anim->startAnim("TauntSuper");
             else if (isMarioActive == -1) anim->startAnim("AreaWaitSigh");
             else if (player->mInput->isHoldSquat()) {
-                if (isBrawl) anim->startAnim(cape && al::isDead(cape) ? "LandJump3" : "TauntFeather");
+                if ((isMario || isBrawl) && cape && al::isDead(cape)) anim->startAnim("LandJump3");
                 else if (isFire || isIce || isSuper) anim->startAnim("TauntSuper");
-                else if (isFeather || isTanooki) anim->startAnim("AreaWaitSayCheese");
                 else anim->startAnim("AreaWait64");
             }
-            else if (isFire || isBrawl || isSuper) anim->startAnim("TauntFire");
-            else if (isFeather || isTanooki) anim->startAnim("TauntFeather");
-            else if (isIce) anim->startAnim("TauntIce");
+            else if (isMario || isBrawl || isSuper) anim->startAnim("TauntSmash01");
             else anim->startAnim("TauntMario");
         }
 
@@ -326,25 +324,22 @@ public:
             if (al::isStep(player, 25)) {
                 if (cape) cape->appear();
                 isCapeActive = 1200;
-                al::tryEmitEffect(model, "AppearBloom", nullptr);
-                al::tryStartSe(player, "Bloom");
+                al::tryEmitEffect(model, "Appear", nullptr);
+                al::tryStartSe(player, "Appear"); al::tryStartSe(player, "CapeGet");
             }
         }
-        else if (anim->isAnim("TauntFire") || anim->isAnim("TauntIce")) {
-            if (al::isStep(player, 65)) al::tryStartSe(player, "FireOn");
-            if (al::isStep(player, 160)) {
-                al::tryStopSe(player, "FireOn", -1, nullptr);
-                al::tryStartSe(player, isIce ? "IceOff" : "FireOff");
-            }
+        else if (anim->isAnim("TauntSmash01")) {
+            if (al::isStep(player, 20)) al::tryStartSe(player, "FireOn");
+            if (al::isStep(player, 120)) { al::tryStopSe(player, "FireOn", -1, nullptr); al::tryStartSe(player, "FireOff"); }
         }
         else if (anim->isAnim("TauntSuper")) {
             if (isFire) player->mStainControl->recordDamageFire();
             else if (isIce) player->mStainControl->recordIceWater();
 
             if (al::isStep(player, 14)) {
-                if (isIce) al::tryEmitEffect(model, "IceEffect", nullptr);
                 if (isMarioActive == 1) { player->mDamageKeeper->invalidate(60); al::tryStartSe(player, "HrPowerUpNormal"); }
                 if (isFire || isSuper || isMarioActive == 1) al::tryEmitEffect(model, "BonfireSuper", nullptr);
+                if (isIce) al::tryEmitEffect(model, "IceEffect", nullptr);
                 if (isSuper) {
                     al::tryEmitEffect(player, "InvincibleStart", nullptr);
                     al::tryEmitEffect(model, "LandFall", nullptr);

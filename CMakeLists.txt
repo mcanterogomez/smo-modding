@@ -14,6 +14,7 @@ add_compile_options(-fstandalone-debug)
 add_compile_options(-Wall -O3 -nodefaultlibs -nostdlib -ffunction-sections -fdata-sections)
 add_compile_options(-Werror=return-type)
 add_compile_options(-fno-asynchronous-unwind-tables -fno-unwind-tables)
+add_compile_options(-fvisibility=hidden -fvisibility-inlines-hidden)
 add_compile_definitions(ARDUINOJSON_ENABLE_COMMENTS SWITCH)
 add_link_options(-shared -ffunction-sections -fdata-sections)
 add_link_options(-stdlib=libc++ -nodefaultlibs -nostdlib)
@@ -49,7 +50,7 @@ add_subdirectory(user)
 target_link_libraries(subsdk9 PUBLIC marshmallow
         -T ${CMAKE_SOURCE_DIR}/cmake/linker.ld
         -Wl,--whole-archive
-        -Wl,--export-dynamic
+        -Wl,--version-script=${CMAKE_SOURCE_DIR}/cmake/exports.map
         -Wl,--hash-style=sysv
         -Wl,--build-id=uuid
         -Wl,-init,rtldInit

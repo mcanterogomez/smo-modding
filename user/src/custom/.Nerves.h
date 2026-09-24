@@ -1,6 +1,7 @@
 #pragma once
 #include "ModConfig.h"
 #include "custom/.Globals.h"
+#include "custom/PlayerWeapon.h"
 
 // Handle lunging
 inline void applyLunge(PlayerActorHakoniwa* player, float launchFrame, float speed) {
@@ -84,10 +85,7 @@ public:
             tryEndSubAnim(anim);
 
             if (!isSpinning) {
-                if (!isCarrying && (isNearCollectible || isNearTreasure || isNearSwoonedEnemy)) {
-                    anim->startAnim(isNearCollectible ? "RabbitGet" : "Kick");
-                    applyHomeIn(player, isNearTarget);
-                }
+                if (!isCarrying && (isNearCollectible || isNearTreasure || isNearSwoonedEnemy)) anim->startAnim(isNearCollectible ? "RabbitGet" : "Kick");
                 else if (didSpin) {
                     anim->startSubAnim(spinDir > 0 ? "SpinAttackLeft" : "SpinAttackRight");
                     anim->startAnim(spinDir > 0 ? "SpinAttackLeft" : "SpinAttackRight");
@@ -123,11 +121,10 @@ public:
                     al::validateHitSensor(state->mActor, "GalaxySpin");
                     attackSensorRemaining = 21;
                 }
-                else if (isWeaponOn) {
+                else if (PlayerWeapon::isAttack()) {
                     anim->startSubAnim("SwingAttack");
                     anim->startAnim("SwingAttack");
                     al::tryStartSe(player, "SwingAttack");
-                    al::validateHitSensor(state->mActor, "GalaxySpin");
                     attackSensorRemaining = 21;
                 }
                 else if (isConfig()->spinOnly) {
@@ -155,6 +152,7 @@ public:
         bool isLow = anim->isAnim("SpinLow");
         bool isJumpPunch = anim->isAnim("JumpPunchL") || anim->isAnim("JumpPunchR");
         bool isBowserPunch = anim->isAnim("JumpPunchEndL") || anim->isAnim("JumpPunchEndR");
+        bool isHoming = anim->isAnim("RabbitGet") || anim->isAnim("Kick");
         float isFrame = anim->getAnimFrame();
 
         if (isPunch) {
@@ -197,11 +195,13 @@ public:
         }
         else if (isLow || anim->isAnim("SwingAttack")) {
             applyLunge(player, 5.0f, 3.75f);
+            if (!isLow && isFrame == 4.0f) al::validateHitSensor(state->mActor, "GalaxySpin"); // windup first, like the punch
             if (isLow && !rs::isOnGround(player, player->mCollider)) { al::setNerve(state, getNerveAt(nrvSpinCapFall)); return;}
         }
         else if ((anim->isAnim("RabbitGet") && isFrame == 7.0f) || (anim->isAnim("Kick") && isFrame == 2.0f)) al::validateHitSensor(state->mActor, "Punch");
 
         if (!isJumpPunch && !isBowserPunch && !isLow) state->updateSpinGroundNerve();
+        if (isHoming) applyHomeIn(player, isNearTarget); // runs last, the move control steers back out of it otherwise
         if (anim->isAnimEnd()) { state->kill(); isSpinActive = false; }
     }
 };
@@ -253,10 +253,9 @@ public:
                     al::validateHitSensor(state->mActor, "GalaxySpin");
                     attackSensorRemaining = 21;
                 }
-                else if (isWeaponOn) {
+                else if (PlayerWeapon::isAttack()) {
                     anim->startAnim("SwingAirAttack");
                     al::tryStartSe(player, "SwingAttack");
-                    al::validateHitSensor(state->mActor, "GalaxySpin");
                     attackSensorRemaining = 21;
                 }
                 else {
@@ -269,6 +268,8 @@ public:
         }
         
         state->updateSpinAirNerve();
+
+        if (anim->isAnim("SwingAirAttack") && anim->getAnimFrame() == 4.0f) al::validateHitSensor(state->mActor, "GalaxySpin"); // windup first, like the punch
 
 		if (anim->isAnimEnd() || attackSensorRemaining <= 0) {
             al::setNerve(state, getNerveAt(nrvSpinCapFall));
@@ -314,7 +315,7 @@ public:
                 else if (isFire || isIce || isSuper) anim->startAnim("TauntSuper");
                 else anim->startAnim("AreaWait64");
             }
-            else if (isMario || isBrawl || isSuper) anim->startAnim("TauntSmash01");
+            else if ((isMario || isBrawl || isSuper) && !PlayerWeapon::find(model, "Blaster")) anim->startAnim("TauntSmash01"); // a model carrying the blaster keeps the default taunt
             else anim->startAnim("TauntMario");
         }
 
@@ -366,6 +367,8 @@ public:
 
 // Hammer specific setup
 inline sead::Matrix34f hammerMtx;
+
+// Hangs the hammer between both hands and gives back where it sits
 inline sead::Vector3f updateHammerMtx() {
     auto* model = isHakoniwa->mModelHolder->findModelActor("Normal");
     const sead::Matrix34f* mL = al::getJointMtxPtr(model, "ArmL2");
@@ -391,14 +394,12 @@ public:
         auto* player = keeper->getParent<PlayerActorHakoniwa>();
         auto* anim = player->mAnimator;
         auto* model = player->mModelHolder->findModelActor("Normal");
-        auto* hammer = al::tryGetSubActor(model, "Hammer");
         bool onGround = rs::isOnGround(player, player->mCollider);
 
         if (al::isFirstStep(player)) {
             tryEndSubAnim(anim);
             hitBufferCount = 0;
 
-            if (hammer) al::hideModelIfShow(hammer);
             updateHammerMtx();
 
             al::setScale(isHammer, sead::Vector3f::zero); // Handle hammer scaling start
@@ -446,30 +447,18 @@ public:
             if (frame >= 22.0f) al::invalidateHitSensor(isHammer, "AttackHack");
         }
 
-        // Scale fade in/out
-        if (al::isAlive(isHammer)) {
-            float scale = sead::Mathf::min(1.0f, al::getNerveStep(player) / 4.0f);
-            if (anim->isAnim("HammerAttack") && anim->getAnimFrame() >= 22.0f) scale = (30.0f - anim->getAnimFrame()) / 8.0f;
-            al::setScale(isHammer, sead::Vector3f(scale, scale, scale));
-        }
+        // Scale fade in/out, only the ground swing ends so the air spin stays full size
+        if (al::isAlive(isHammer)) PlayerWeapon::setFade(isHammer, false, anim, al::getNerveStep(player), "HammerAttack");
 
-        if (anim->isAnimEnd()) {
-            al::setNerve(player, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
-            return;
-        }
+        // The belt hammer stands in while the big one is out
+        PlayerWeapon::showCarry(model, "Hammer", al::isDead(isHammer));
 
-        if (hammer && al::isDead(isHammer)) al::showModelIfHide(hammer);
+        if (anim->isAnimEnd()) al::setNerve(player, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
     }
 
     void executeOnEnd(al::NerveKeeper* keeper) const override {
         auto* player = keeper->getParent<PlayerActorHakoniwa>();
-        auto* model = player->mModelHolder->findModelActor("Normal");
-        cleanup(al::tryGetSubActor(model, "Hammer"));
-    }
-
-private:
-    static void cleanup(al::LiveActor* hammer) {
-        if (hammer) al::showModelIfHide(hammer);
+        PlayerWeapon::showCarry(player->mModelHolder->findModelActor("Normal"), "Hammer", true);
         if (isHammer) { al::invalidateHitSensor(isHammer, "AttackHack"); isHammer->makeActorDead(); }
     }
 };

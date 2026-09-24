@@ -29,27 +29,25 @@ namespace PlayerCore {
                 const char* costume = GameDataFunction::getCurrentCostumeTypeName(thisPtr);
                 const char* cap = GameDataFunction::getCurrentCapTypeName(thisPtr);
 
+                isNoCap = cap && al::isEqualString(cap, "MarioNoCap");
+                isFeather = costume && al::isEqualString(costume, "MarioFeather");
+
+                auto isSuit = [&](const char* name) {
+                    return costume && cap && al::isEqualString(costume, name) && al::isEqualString(cap, name);
+                };
+
+                isClassic = isSuit("MarioColorClassic");
+                isFire = isSuit("MarioColorFire");
+                isIce = isSuit("MarioColorIce");
+                isTanooki = isSuit("MarioTanooki");
+                isDrill = isSuit("MarioDrill");
+                isMetal = isSuit("MarioColorMetal");
+                isFly = isSuit("MarioColorFly");
+                isBrawl = isSuit("MarioColorBrawl");
+                isSuper = isSuit("MarioColorSuper");
+                isKnight = isSuit("MarioKnight");
                 isMario = isConfig()->enableMario && detectIsMario(costume, cap);
-                isNoCap = (cap && al::isEqualString(cap, "MarioNoCap"));
-                isFeather = (costume && al::isEqualString(costume, "MarioFeather"));
-                isFire = (costume && al::isEqualString(costume, "MarioColorFire"))
-                    && (cap && al::isEqualString(cap, "MarioColorFire"));
-                isIce = (costume && al::isEqualString(costume, "MarioColorIce"))
-                    && (cap && al::isEqualString(cap, "MarioColorIce"));
-                isTanooki = (costume && al::isEqualString(costume, "MarioTanooki"))
-                    && (cap && al::isEqualString(cap, "MarioTanooki"));
-                isDrill = (costume && al::isEqualString(costume, "MarioDrill"))
-                    && (cap && al::isEqualString(cap, "MarioDrill"));
-                isMetal = (costume && al::isEqualString(costume, "MarioColorMetal"))
-                    && (cap && al::isEqualString(cap, "MarioColorMetal"));
-                isFly = (costume && al::isEqualString(costume, "MarioColorFly"))
-                    && (cap && al::isEqualString(cap, "MarioColorFly"));
-                isBrawl = (costume && al::isEqualString(costume, "MarioColorBrawl"))
-                    && (cap && al::isEqualString(cap, "MarioColorBrawl"));
-                isSuper = (costume && al::isEqualString(costume, "MarioColorSuper"))
-                    && (cap && al::isEqualString(cap, "MarioColorSuper"));
-                isKnight = (costume && al::isEqualString(costume, "MarioKnight"))
-                    && (cap && al::isEqualString(cap, "MarioKnight"));
+
                 // Set Cap sounds
                 if ((isMetal || isKnight) && thisPtr->mHackCap) al::setSeKeeperPlayNamePrefix(thisPtr->mHackCap, "Iron");
 
@@ -246,11 +244,13 @@ namespace PlayerCore {
                     al::startActionSubActor(model, "顔", "SwimStand");
 
                 bool tauntSmash = al::isActionPlaying(model, "TauntSmash") || al::isActionPlaying(model, "TauntSmash01");
-                if (((isBrawl && !tauntSmash) || isSuper || anim->isAnim("BattleWait")) && !al::isActionPlayingSubActor(model, "顔", "WaitAngry"))
-                    al::startActionSubActor(model, "顔", "WaitAngry");
 
-                if (isMetal && !al::isActionPlayingSubActor(model, "顔", "AreaWaitFight"))
-                    al::startActionSubActor(model, "顔", "AreaWaitFight");
+                // Metal and the battle stance fight, Brawl and Super glare the rest of the time
+                const char* faceAnim = nullptr;
+                if (isMetal || anim->isAnim("BattleWait")) faceAnim = "AreaWaitFight01";
+                else if ((isBrawl && !tauntSmash) || isSuper) faceAnim = "WaitAngry";
+
+                if (faceAnim && !al::isActionPlayingSubActor(model, "顔", faceAnim)) al::startActionSubActor(model, "顔", faceAnim);
             }
 
             // Handle guard window
@@ -293,7 +293,9 @@ namespace PlayerCore {
                 if (source && al::isEqualString(al::getSensorHost(source)->getName(), "MarioTankBullet")) return false;
 
                 float frame = anim->getAnimFrame();
-                if ((al::isEqualSubString(anim->mCurAnim, "Punch")  && frame <= 6.0f) || (al::isEqualSubString(anim->mCurAnim, "JumpPunch") && frame <= 17.0f)) return false;
+                if ((al::isEqualSubString(anim->mCurAnim, "Punch")  && frame <= 6.0f)
+                    || (al::isEqualSubString(anim->mCurAnim, "JumpPunch") && frame <= 17.0f)
+                    || (isSwingAnim(anim) && frame <= 4.0f)) return false;
 
                 // Parry - only on a hit that would otherwise land
                 if (source && guardWindow > 0 && thisPtr->mDamageKeeper->mDamageInvalidCount <= 0) {

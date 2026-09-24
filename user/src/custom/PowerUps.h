@@ -6,6 +6,7 @@
 #include "custom/PlayerFireBall.h"
 #include "custom/PlayerFreeze.h"
 #include "headers/PlayerIceCube.h"
+#include "custom/PlayerWeapon.h"
 
 // Shared core of both water surface run judges
 template <typename Judge>
@@ -132,36 +133,11 @@ namespace PowerUps {
 		if (isHammer && al::isAlive(isHammer)
 			&& !al::isNerve(thisPtr, &HammerNrv)) { isHammer->makeActorDead(); al::invalidateHitSensor(isHammer, "AttackHack"); }
 
+		// Handle weapon arming and swapping
+		PlayerWeapon::update(thisPtr, model, isActive);
+
 		// Handle logic for Drill Suit
 		PlayerDrill::update(thisPtr);
-
-		// Handle weapon spawning
-		static int holdRightFrames = 0;
-		if (al::isPadHoldRight(-1)) holdRightFrames++;
-		else holdRightFrames = 0;
-
-		auto* blaster = al::tryGetSubActor(model, "Blaster");
-		auto* axe = al::tryGetSubActor(model, "Axe");
-		auto* weapon = isKnight ? axe : blaster;
-
-		isWeaponOn = weapon && al::isAlive(weapon);
-		bool weaponToggle = isActive && holdRightFrames == 30;
-		bool canToggle = (isMario || isKnight) && weaponToggle;
-
-		if (weapon && isWeaponOn && (canToggle || (!isKnight && isMarioActive == -1))) {
-			weapon->kill();
-			al::tryEmitEffect(model, "BlasterDisappear", nullptr);
-			al::tryStartSe(thisPtr, "BlasterOpen");
-		}
-		else if (weapon && !isWeaponOn && canToggle) {
-			weapon->appear();
-			al::tryEmitEffect(model, "BlasterAppear", nullptr);
-			al::tryStartSe(thisPtr, "BlasterOpen");
-		}
-
-		auto* hand = al::tryGetSubActor(model, "右手");
-		if (isWeaponOn && hand && isMario && !al::isActionPlayingSubActor(model, "右手", "AreaWaitDance03")) al::startActionSubActor(model, "右手", "AreaWaitDance03");
-		if (isWeaponOn && hand && isKnight && !al::isActionPlayingSubActor(model, "右手", "GrabCeilWait")) al::startActionSubActor(model, "右手", "GrabCeilWait");
 
 		// Fireball / Iceball / Blaster
 		PlayerFireBall::update(thisPtr);

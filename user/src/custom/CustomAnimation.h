@@ -1,6 +1,7 @@
 #pragma once
 #include "ModConfig.h"
 #include "custom/.Globals.h"
+#include "custom/PlayerWeapon.h"
 
 class PlayerSpinCapAttack;
 
@@ -30,7 +31,7 @@ namespace CustomAnimation {
 
 		auto is = [&](const char* other) { return al::isEqualString(name, other); };
 
-		if (isWeaponOn && is("Wait")) return "BlastWait";
+		if (PlayerWeapon::isArmed() && is("Wait")) return "BlastWait"; // a swapped weapon is gone by the time Wait starts
 
 		if (isFly) {
 			if (is("GlideFloat")) return "GlideFloatSuper";

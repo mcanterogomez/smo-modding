@@ -1,0 +1,4 @@
+/* Export nothing: other exlaunch mods loaded after us (e.g. subsdk9) would otherwise bind to our exl/rtld symbols. */
+{
+  local: *;
+};

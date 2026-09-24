@@ -71,7 +71,7 @@ namespace AttackSensor {
             ) {
                 if (!isPunchAttack) {
                     if (isAnyType(targetHost, "BlockQuestion", "BlockBrick", "BossForestBlock")) {
-                        hitBuffer[hitBufferCount++] = nullptr; // Prevent wall bounce, keep hittable
+                        if (!hitBufferCount) hitBuffer[hitBufferCount++] = nullptr; // Prevent wall bounce, keep hittable, and one slot is enough
                         rs::sendMsgHammerBrosHammerHackAttack(target, source);
                         return;
                     }

@@ -220,6 +220,7 @@ const uintptr_t nrvHakoniwaWallAir = 0x1D78958;
 
 // Suit flags
 inline bool isMario = false;
+inline bool isClassic = false;
 inline bool isNoCap = false;
 inline bool isFeather = false;
 inline bool isFire = false;
@@ -448,14 +449,19 @@ inline void tryEndSubAnim(PlayerAnimator* anim) {
 	if (anim->isSubAnimPlaying()) anim->endSubAnim();
 }
 
+inline bool isSwingAnim(const PlayerAnimator* anim) {
+	if (!anim) return false;
+	return al::isEqualString(anim->mCurAnim, "SwingAttack")
+		|| al::isEqualString(anim->mCurAnim, "SwingAirAttack");
+}
+
 inline bool isBaseSpinAnim(const PlayerAnimator* anim) {
-	return al::isEqualString(anim->mCurAnim, "SpinSeparate")
+	return isSwingAnim(anim)
+		|| al::isEqualString(anim->mCurAnim, "SpinSeparate")
 		|| al::isEqualString(anim->mCurAnim, "SpinSeparateSwim")
 		|| al::isEqualString(anim->mCurAnim, "SpinLow")
 		|| al::isEqualString(anim->mCurAnim, "CapeAttack")
-		|| al::isEqualString(anim->mCurAnim, "TailAttack")
-		|| al::isEqualString(anim->mCurAnim, "SwingAttack")
-		|| al::isEqualString(anim->mCurAnim, "SwingAirAttack");
+		|| al::isEqualString(anim->mCurAnim, "TailAttack");
 }
 
 inline bool isDoubleSpinAnim(const PlayerAnimator* anim) {

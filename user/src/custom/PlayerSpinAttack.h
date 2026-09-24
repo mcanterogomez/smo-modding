@@ -183,24 +183,27 @@ namespace PlayerSpinAttack {
 
 			auto* anim = isHakoniwa->mAnimator;
 			bool isPunch = anim->isAnim("PunchR") || anim->isAnim("PunchL");
-			bool isNear = anim->isAnim("RabbitGet") || anim->isAnim("Kick");
 			float frame = anim->getAnimFrame();
 
+			// New attack: reset the hit state, spins hit straight away
 			if (spin.trigger && al::isFirstStep(thisPtr)) {
-				hitBufferCount = 0;
 				spin.trigger = false;
-				isSpinActive = true;
 				spin.isGalaxy = !isPunch;
+				isSpinActive = true;
+				hitBufferCount = 0;
 				isNearTarget = findNearestTarget(isHakoniwa, 250.0f);
-				if (!isPunch && !isNear) { al::validateHitSensor(thisPtr->mActor, "GalaxySpin"); attackSensorRemaining = 32; }
+				if (!isPunchAnim(anim)) attackSensorRemaining = 32;
+				if (!isPunchAnim(anim) && !isSwingAnim(anim)) al::validateHitSensor(thisPtr->mActor, "GalaxySpin");
 			}
 
-			if ((anim->isAnim("RabbitGet") && frame >= 7.0f) || (anim->isAnim("Kick") && frame >= 2.0f)) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 15; }
-			else if (anim->isAnim("SwingAttack")) applyLunge(isHakoniwa, 2.0f, 5.0f);
-			else if (isPunch) {
-				applyLunge(isHakoniwa, 5.0f, 5.0f);
-				if (frame >= 6.0f) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 6; }
-			}
+			// Lunges
+			if (isPunch) applyLunge(isHakoniwa, 5.0f, 5.0f);
+			if (anim->isAnim("SwingAttack")) applyLunge(isHakoniwa, 2.0f, 5.0f);
+
+			// Everything else hits once its windup is over, like on land
+			if (isSwingAnim(anim) && frame == 4.0f) al::validateHitSensor(thisPtr->mActor, "GalaxySpin");
+			else if (isPunch && frame >= 6.0f) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 6; }
+			else if ((anim->isAnim("RabbitGet") && frame >= 7.0f) || (anim->isAnim("Kick") && frame >= 2.0f)) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 15; }
 		}
 	};
 
@@ -225,10 +228,10 @@ namespace PlayerSpinAttack {
 			else if (isFeather || (!isGround && isMario && isCapeOn)) animator->startAnim("CapeAttack");
 			else if (isTanooki) animator->startAnim("TailAttack");
 			else if (isGround) {
-				if (isWeaponOn) animator->startAnim("SwingAttack");
+				if (PlayerWeapon::isAttack()) animator->startAnim("SwingAttack");
 				else { isPunchRight = !isPunchRight; animator->startAnim(isPunchRight ? "PunchR" : "PunchL"); }
 			}
-			else if (isWeaponOn) animator->startAnim("SwingAirAttack");
+			else if (PlayerWeapon::isAttack()) animator->startAnim("SwingAirAttack");
 			else {
 				animator->startAnim("SpinSeparateSwim");
 				isGalaxySfx(isHakoniwa);

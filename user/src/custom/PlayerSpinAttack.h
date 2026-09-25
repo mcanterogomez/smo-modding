@@ -191,7 +191,6 @@ namespace PlayerSpinAttack {
 				spin.isGalaxy = !isPunch;
 				isSpinActive = true;
 				hitBufferCount = 0;
-				isNearTarget = findNearestTarget(isHakoniwa, 250.0f);
 				if (!isPunchAnim(anim)) attackSensorRemaining = 32;
 				if (!isPunchAnim(anim) && !isSwingAnim(anim)) al::validateHitSensor(thisPtr->mActor, "GalaxySpin");
 			}
@@ -204,6 +203,8 @@ namespace PlayerSpinAttack {
 			if (isSwingAnim(anim) && frame == 4.0f) al::validateHitSensor(thisPtr->mActor, "GalaxySpin");
 			else if (isPunch && frame >= 6.0f) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 6; }
 			else if ((anim->isAnim("RabbitGet") && frame >= 7.0f) || (anim->isAnim("Kick") && frame >= 2.0f)) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 15; }
+
+			if (anim->isAnim("RabbitGet") || anim->isAnim("Kick")) applyHomeIn(isHakoniwa, isNearTarget); // same homing as on land
 		}
 	};
 

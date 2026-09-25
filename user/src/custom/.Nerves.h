@@ -29,10 +29,10 @@ inline void applyLunge(PlayerActorHakoniwa* player, float launchFrame, float spe
 	al::setVelocity(player, vel);
 }
 
-// Home in on nearest target
+// Home in on the target
 inline void applyHomeIn(al::LiveActor* player, al::LiveActor* target) {
-    if (!isNearTarget || !al::isAlive(isNearTarget) || isInHitBuffer(isNearTarget)) return;
-    al::faceToDirection(player, al::getTrans(isNearTarget) - al::getTrans(player));
+    if (!target || !al::isAlive(target) || isInHitBuffer(target)) return;
+    al::faceToDirection(player, al::getTrans(target) - al::getTrans(player));
 
     sead::Vector3f grav = al::getGravity(player);
     sead::Vector3f* vel = al::getVelocityPtr(player);
@@ -79,7 +79,6 @@ public:
             bool isCarrying = player->mCarryKeeper->isCarry();
             bool didSpin = player->mInput->isSpinInput();
             int spinDir = player->mInput->mSpinInputAnalyzer->mSpinDirection;
-            isNearTarget = findNearestTarget(player, 250.0f);
             isPunchRight = !isPunchRight;
 
             tryEndSubAnim(anim);
@@ -473,19 +472,19 @@ public:
         if (al::isFirstStep(player)) {
             tryEndSubAnim(anim);
             anim->startAnim("Fall");
-            anim->startUpperBodyAnim("HitGuard"); // masked: the legs keep falling
+            tryStartUpperBodyAnim(anim, "HitGuard"); // masked: the legs keep falling
             al::tryEmitEffect(player, "HitGuard", nullptr);
             al::tryStartSe(player, "HitGuard");
             return; // let the blowback land before testing the ground
         }
 
         if (!onGround) al::addVelocity(player, al::getGravity(player));
-        else if (!anim->isAnim("HitGuard")) { anim->clearUpperBodyAnim(); anim->startAnim("HitGuard"); } // touchdown: full body
+        else if (!anim->isAnim("HitGuard")) { tryClearUpperBodyAnim(anim); anim->startAnim("HitGuard"); } // touchdown: full body
 
-        if (onGround ? anim->isAnimEnd() : anim->isUpperBodyAnimEnd()) al::setNerve(player, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
+        if (onGround ? anim->isAnimEnd() : isUpperBodyAnimEnd(anim)) al::setNerve(player, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
     }
 
-    void executeOnEnd(al::NerveKeeper* keeper) const override { keeper->getParent<PlayerActorHakoniwa>()->mAnimator->clearUpperBodyAnim(); }
+    void executeOnEnd(al::NerveKeeper* keeper) const override { tryClearUpperBodyAnim(keeper->getParent<PlayerActorHakoniwa>()->mAnimator); }
 };
 
 inline PlayerStateSpinCapNrvGalaxySpinGround GalaxySpinGround;

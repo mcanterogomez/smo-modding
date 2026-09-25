@@ -487,7 +487,7 @@ namespace PowerUps {
 			isCapeActive = 1200;
 			isNotFloat = true;
 
-			if (state->mAnimator) state->mAnimator->clearUpperBodyAnim();
+			tryClearUpperBodyAnim(state->mAnimator);
 			Orig(state);
 		}
 	};

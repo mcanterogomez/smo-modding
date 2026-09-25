@@ -18,6 +18,7 @@ namespace PlayerCore {
             isHakoniwa = nullptr;
             isKoopa = nullptr;
             isNearTarget = nullptr;
+            battleStance = 0;
 
             Orig(thisPtr, actorInfo, playerInfo);
 
@@ -76,8 +77,8 @@ namespace PlayerCore {
                 PowerUps::executeMovement(thisPtr);
             #endif
 
-            // Handle idle animation cycle
-            CustomAnimation::updateIdleCycle(thisPtr);
+            // Handle battle stance and idle cycle
+            CustomAnimation::update(thisPtr);
 
             // Toggle configs
             if (al::isPadHoldL(-1) && al::isPadHoldPressLeftStick(-1)
@@ -206,6 +207,7 @@ namespace PlayerCore {
             isNearCollectible = false;
             isNearTreasure = false;
             isNearSwoonedEnemy = false;
+            isNearTarget = nullptr; // the kick homes onto whatever the scan below matched
 
             // Handle Mario's Carry sensor
             al::HitSensor* carrySensor = al::getHitSensor(thisPtr, "Carry");
@@ -219,14 +221,14 @@ namespace PlayerCore {
 
                     if (al::isEqualSubString(typeid(*actor).name(), "Radish")
                         || al::isEqualSubString(typeid(*actor).name(), "BossRaidRivet")
-                        || al::isEqualSubString(typeid(*actor).name(), "Stake")) { isNearCollectible = true; break;}
+                        || al::isEqualSubString(typeid(*actor).name(), "Stake")) { isNearCollectible = true; isNearTarget = actor; break;}
 
                     if (al::isEqualSubString(typeid(*actor).name(), "TreasureBox")
-                        && !al::isModelName(actor, "TreasureBoxWood")) { isNearTreasure = true; break; }
+                        && !al::isModelName(actor, "TreasureBoxWood")) { isNearTreasure = true; isNearTarget = actor; break; }
 
                     if (al::isSensorEnemyBody(other)
                         && (al::isActionPlaying(actor, "SwoonStart") || al::isActionPlaying(actor, "SwoonStartLand")
-                            || al::isActionPlaying(actor, "SwoonLoop") || al::isActionPlaying(actor, "Swoon"))) { isNearSwoonedEnemy = true; break; }
+                            || al::isActionPlaying(actor, "SwoonLoop") || al::isActionPlaying(actor, "Swoon"))) { isNearSwoonedEnemy = true; isNearTarget = actor; break; }
                 }
             }
 

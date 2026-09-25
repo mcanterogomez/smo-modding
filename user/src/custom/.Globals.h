@@ -293,6 +293,7 @@ inline int guardWindow = 0; // frames left to parry
 inline int isCapeActive = -1;
 inline int isDashDelay = -1; // -1 = idle, counts down while R is held and running, dash engages at 0
 inline int isMarioActive = 0; // 0 = none, 1 = enabling, -1 = disabling
+inline int battleStance = 0; // frames left in the battle stance, 0 = off
 
 // Constants
 const f32 MIN_SPEED_RUN_ON_WATER = 15.0f;
@@ -392,6 +393,16 @@ inline al::LiveActor* findNearestTarget(const al::LiveActor* player, f32 maxDist
 	return nearest;
 }
 
+// Any enemy the Eye sensor sees; a defeated one switches its body sensor off, and our fireballs are enemy actors too
+inline bool isEnemyNear(const al::LiveActor* player) {
+	al::HitSensor* eye = al::getHitSensor(player, "Eye");
+	for (int i = 0; eye && i < eye->mSensorCount; i++) {
+		al::HitSensor* s = eye->mSensors[i];
+		if (s->mIsValid && al::isSensorEnemyBody(s) && !isAnyType(al::getSensorHost(s), "FireBall")) return true;
+	}
+	return false;
+}
+
 // Captured actors keep vanilla behaviour
 inline bool isHacking() { return isHakoniwa && isHakoniwa->mHackKeeper && isHakoniwa->mHackKeeper->mHackActor; }
 
@@ -432,14 +443,6 @@ struct SpinState {
 inline SpinState spin;
 enum class SpinPre { Fallthrough, Accept, Reject };
 
-// Handle Guard state
-inline bool isGuarding() {
-	return isHakoniwa && (isHakoniwa->mAnimator->isUpperBodyAnim("HitGuard") || isHakoniwa->mAnimator->isAnim("HitGuard"));
-}
-
-// Handle active action state
-inline bool isActionBusy() { return isGuarding() || fireStep >= 0 || drillStep >= 0; }
-
 // =========================================================
 //                   ANIMATION CHECKS
 // =========================================================
@@ -448,6 +451,15 @@ inline bool isActionBusy() { return isGuarding() || fireStep >= 0 || drillStep >
 inline void tryEndSubAnim(PlayerAnimator* anim) {
 	if (anim->isSubAnimPlaying()) anim->endSubAnim();
 }
+
+// Upper body calls crash without the 3D model's slot (2D models, or no model yet mid stage init), so always go through these
+inline bool hasUpperBody(const PlayerAnimator* anim) {
+	return anim && anim->mModelHolder->mCurrentModel && anim->mModelHolder->isCurrentModelLabel("Normal");
+}
+inline bool isUpperBodyAnim(const PlayerAnimator* anim, const char* name) { return hasUpperBody(anim) && anim->isUpperBodyAnim(name); }
+inline bool isUpperBodyAnimEnd(const PlayerAnimator* anim) { return !hasUpperBody(anim) || anim->isUpperBodyAnimEnd(); }
+inline void tryStartUpperBodyAnim(PlayerAnimator* anim, const char* name) { if (hasUpperBody(anim)) anim->startUpperBodyAnim(name); }
+inline void tryClearUpperBodyAnim(PlayerAnimator* anim) { if (hasUpperBody(anim)) anim->clearUpperBodyAnim(); }
 
 inline bool isSwingAnim(const PlayerAnimator* anim) {
 	if (!anim) return false;
@@ -511,4 +523,20 @@ inline bool isDrillAnim(const PlayerAnimator* anim) {
 	return anim->isSubAnim("DrillIn")
 		|| anim->isSubAnim("DrillOut")
 		|| anim->isSubAnim("DrillOutFast");
+}
+
+// Handle Guard state
+inline bool isGuarding() {
+	return isHakoniwa && (isUpperBodyAnim(isHakoniwa->mAnimator, "HitGuard") || isHakoniwa->mAnimator->isAnim("HitGuard"));
+}
+
+// Handle active action state
+inline bool isActionBusy() { return isGuarding() || fireStep >= 0 || drillStep >= 0; }
+
+// Any attack or guard in progress, read from our own state since sensors can sit valid between attacks
+inline bool isAttacking(const PlayerActorHakoniwa* player) {
+	auto* anim = player->mAnimator;
+	return attackSensorRemaining > 0 || fireStep >= 0 || isGuarding()
+		|| isSpinAnim(anim) || isPunchAnim(anim) || isJumpPunchAnim(anim)
+		|| (isHammer && al::isAlive(isHammer));
 }

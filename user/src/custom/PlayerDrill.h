@@ -142,17 +142,13 @@ namespace PlayerDrill {
 	}
 
 	// Full drill update: subactor, visuals, wall-stick, sensors
-	inline void update(PlayerActorHakoniwa* thisPtr) {
+	inline void update(PlayerActorHakoniwa* thisPtr, al::LiveActor* model, bool isActive) {
 		if (!isDrill) return;
 
-		auto* model = thisPtr->mModelHolder->findModelActor("Normal");
 		auto* drill = al::tryGetSubActor(model, "Drill");
 		auto* anim = thisPtr->mAnimator;
-		auto* damage = thisPtr->mDamageKeeper;
 
-		bool isFlicker = damage && damage->mDamageInvalidCount > 0;
 		bool controllable = !isHacking() && !rs::isActiveDemo(thisPtr); // not captured or in a demo
-		bool isActive = !isFlicker && controllable;
 		bool capOn = thisPtr->mHackCap->isPutOn();
 		bool inHipDrop = al::isNerve(thisPtr, getNerveAt(nrvHakoniwaHipDrop));
 		bool inLand = anim->isAnim("HipDropLand");

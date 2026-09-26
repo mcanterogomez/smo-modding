@@ -32,7 +32,7 @@ struct MotorcycleAttackSensorInline : public mallow::hook::Inline<MotorcycleAtta
         if (!isValidAttackTarget(target)) return;
 
         rs::sendMsgHackAttack(target, source) || al::sendMsgExplosion(target, source, nullptr)
-        || rs::sendMsgSphinxRideAttack(target, source) || rs::sendMsgSphinxRideAttackReflect(target, source) 
+        || rs::sendMsgSphinxRideAttack(target, source) || rs::sendMsgSphinxRideAttackReflect(target, source)
         || rs::sendMsgBullHackAttack(target, source) || rs::sendMsgKoopaCapPunchL(target, source);
     }
 };

@@ -51,11 +51,11 @@ namespace PlayerWeapon {
 		return scale;
 	}
 
-	// Attacks use a held weapon once armed, and any other one whenever the suit has the model
+	// Attacks use a held weapon once armed (it's already in hand), any other one only with the spin toggle on, else punch and air spin
 	inline bool isAttack() {
 		Weapon setup = get();
 		if (setup.isHeld) return isWeaponOn;
-		return isHakoniwa && find(isHakoniwa->mModelHolder->findModelActor("Normal"), setup.attack);
+		return isConfig()->spinOnly && isHakoniwa && find(isHakoniwa->mModelHolder->findModelActor("Normal"), setup.attack);
 	}
 
 	// Out and staying out, so it shows between attacks
@@ -100,7 +100,8 @@ namespace PlayerWeapon {
 		isWeaponOn = al::isAlive(weapon);
 
 		// Hand action while it is out
-		if (isWeaponOn && setup.pose && find(model, "右手") && !al::isActionPlayingSubActor(model, "右手", setup.pose)) al::startActionSubActor(model, "右手", setup.pose);
+		auto* hand = isWeaponOn && setup.pose ? find(model, "右手") : nullptr;
+		if (hand && !al::isActionPlaying(hand, setup.pose)) al::startAction(hand, setup.pose);
 	}
 
 }  // namespace PlayerWeapon

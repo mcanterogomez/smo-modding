@@ -7,9 +7,9 @@ namespace PlayerSneak {
 
 	// Actors asking where the player is get a position far away while sneaking, null means answer normally
 	inline const sead::Vector3f* tryGetHiddenPos(const al::LiveActor* actor) {
-		if (!isSneaking || actor == isHakoniwa) return nullptr;
+		if (!isSneaking || !isHakoniwa || actor == isHakoniwa || !actor->getPoseKeeper()) return nullptr; // no pose keeper, no position to fake
 		if (!hasSensor(actor, [](const al::HitSensor* s) { return al::isSensorEnemyBody(s) || al::isSensorNpc(s); })) return nullptr;
-		if (actor->getPoseKeeper() && al::isFaceToTargetDegree(actor, al::getTrans(isHakoniwa), 50.0f)) return nullptr; // facing Mario, sneaking doesn't hide him
+		if (al::isFaceToTargetDegree(actor, al::getTrans(isHakoniwa), 50.0f)) return nullptr; // facing Mario, sneaking doesn't hide him
 
 		static sead::Vector3f pos;
 		pos = al::getTrans(actor) + sead::Vector3f(100000.0f, 100000.0f, 100000.0f);

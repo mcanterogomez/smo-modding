@@ -13,7 +13,7 @@ inline bool isDefinitve() {
 
 // The area/temperature wait the engine picked for where the player stands, or nullptr
 inline const char* areaWaitAnim(const PlayerActorHakoniwa* player) {
-	const void* stateWait = *reinterpret_cast<const void* const*>(reinterpret_cast<const u8*>(player) + 0x2D8);
+	const void* stateWait = player->mStateWait;
 	return *reinterpret_cast<const char* const*>(reinterpret_cast<const u8*>(stateWait) + 0x90);
 }
 
@@ -45,7 +45,7 @@ namespace CustomAnimation {
 	inline void updateBattleStance(PlayerActorHakoniwa* thisPtr) {
 		if (isBrawl || isSuper) battleStance = 0; // their idles are already fighting poses, BattleWait only plays when the game asks for it
 		else if (isAttacking(thisPtr)) battleStance = 300; // 10 seconds at 60fps
-		else if (isEnemyNear(thisPtr)) battleStance = battleStance ? battleStance : 1; // 1 runs out the frame the enemy is gone
+		else if (isEnemyNear(thisPtr)) battleStance = sead::Mathi::max(battleStance, 1); // 1 runs out the frame the enemy is gone
 		else if (battleStance > 0) battleStance--;
 	}
 

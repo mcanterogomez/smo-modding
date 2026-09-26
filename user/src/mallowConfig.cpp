@@ -8,7 +8,7 @@
 namespace mallow::config {
     const char* path = "sd:/atmosphere/contents/0100000000010000/mod_config.json";
     const char* pathEmu = "sd:/mod_config.json";
-    const char* defaultConfig = R"({ 
+    const char* defaultConfig = R"({
         "attackButton":"Y",
         "spinOnly":false,
         "galaxySfx":false,
@@ -24,7 +24,7 @@ namespace mallow::config {
         return &modConfig;
     }
     bool isEmu() {
-        nn::fs::DirectoryEntryType type;
+        nn::fs::DirectoryEntryType type = nn::fs::DirectoryEntryType_Directory; // stays set when the lookup fails (no package3 on emulator)
         nn::fs::GetEntryType(&type, "sd:/atmosphere/package3");
         return type != nn::fs::DirectoryEntryType_File;
     }

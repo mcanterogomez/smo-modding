@@ -42,7 +42,7 @@ namespace PlayerKart {
             al::initJointLocalXRotator(isKart, &wheelSpin, "FrontTireR"); al::initJointLocalXRotator(isKart, &wheelSpin, "FrontTireL");
             al::initJointLocalXRotator(isKart, &wheelSpin, "BackTireR"); al::initJointLocalXRotator(isKart, &wheelSpin, "BackTireL");
             // Wheel steer (Y): post-quat rotates the joint in parent space, so the anim's spin turns with it; registered last to wrap tilt and spin too
-            al::initJointPostQuatController(isKart, &wheelSteerQuat, "FrontTireR"); al::initJointPostQuatController(isKart, &wheelSteerQuat, "FrontTireL");            // Propeller
+            al::initJointPostQuatController(isKart, &wheelSteerQuat, "FrontTireR"); al::initJointPostQuatController(isKart, &wheelSteerQuat, "FrontTireL");
             // Propeller
             al::initJointLocalZRotator(isKart, &propellerSpin, "Propeller"); al::initJointLocalTransControllerZ(isKart, &propellerOffset, "Propeller");
             al::initJointLocalScaleController(isKart, &propellerScale, "Propeller");
@@ -177,9 +177,9 @@ namespace PlayerKart {
 			if (isAntiGravity != wasAntiGravity) {
 				al::tryStartSe(kart, isAntiGravity ? "HoverStart" : "HoverFinish");
 				al::startAction(kart, actionName);
-                if (isAntiGravity) { al::tryEmitEffect(kart, "HoverOn", nullptr); al::showMaterial(kart, "GravityMT"); }
-                else al::hideMaterial(kart, "GravityMT");
-            }
+				if (isAntiGravity) { al::tryEmitEffect(kart, "HoverOn", nullptr); al::showMaterial(kart, "GravityMT"); }
+				else al::hideMaterial(kart, "GravityMT");
+			}
 
 			// Hover drives: tilt and wheels follow the hover state
 			hoverBlend = al::lerpValue(hoverBlend, isAntiGravity ? 1.0f : 0.0f, 0.05f);
@@ -195,9 +195,9 @@ namespace PlayerKart {
 			propellerSpeed = al::lerpValue(propellerSpeed, targetSpeed, 0.1f);
 			propellerSpin += propellerSpeed;
 
-            bool isDashing = propellerSpeed > 5.0f;
-            if (isDashing) { al::tryEmitEffect(kart, "PropellerSwim", nullptr); al::tryEmitEffect(kart, "PropellerSpin", nullptr); }
-            else { al::tryDeleteEffect(kart, "PropellerSwim"); al::tryDeleteEffect(kart, "PropellerSpin"); }
+			bool isDashing = propellerSpeed > 5.0f;
+			if (isDashing) { al::tryEmitEffect(kart, "PropellerSwim", nullptr); al::tryEmitEffect(kart, "PropellerSpin", nullptr); }
+			else { al::tryDeleteEffect(kart, "PropellerSwim"); al::tryDeleteEffect(kart, "PropellerSpin"); }
 
 			// Submerged: ground dust/idle effects would look wrong underwater
 			if (isSubmerged) {
@@ -209,7 +209,7 @@ namespace PlayerKart {
 			kartBorder->update(al::getTrans(kart), al::getVelocity(kart), !rs::isCollidedGround(collider));
 			*al::getTransPtr(kart) += kartBorder->mPullBack;
 
-            Orig(actor);
+			Orig(actor);
 		}
 	};
 
@@ -265,7 +265,6 @@ namespace PlayerKart {
         MotorcycleResetHook::InstallAtSymbol("_ZN10Motorcycle8exeResetEv");
 
         exl::patch::CodePatcher motorcycleJointCapPatcher(0x2C72A4); // Motorcycle's joint keeper bumped 6 to 20 to fit tilt + spin rotators
-        //motorcycleJointCapPatcher.WriteInst(0x52800181); // MOV W1, #12
         motorcycleJointCapPatcher.WriteInst(0x52800281); // MOV W1, #20
 
         exl::patch::CodePatcher moveLimitFilterPatcher(0x2C7520); // Motorcycle's init to NOP wall boundaries

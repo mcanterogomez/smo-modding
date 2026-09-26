@@ -7,13 +7,14 @@
 #include "custom/PlayerFreeze.h"
 #include "headers/PlayerIceCube.h"
 #include "custom/PlayerWeapon.h"
+#include "Library/Action/ActorActionKeeper.h"
 
 // Shared core of both water surface run judges
 template <typename Judge>
 static bool canRunOnSurface(const Judge* thisPtr) {
-    return thisPtr->mWaterSurfaceFinder->isFoundSurface()
-        && al::isNearZeroOrGreater(thisPtr->mWaterSurfaceFinder->getDistance())
-        && al::calcSpeedH(thisPtr->mPlayer) >= MIN_SPEED_RUN_ON_WATER;
+	return thisPtr->mWaterSurfaceFinder->isFoundSurface()
+		&& al::isNearZeroOrGreater(thisPtr->mWaterSurfaceFinder->getDistance())
+		&& al::calcSpeedH(thisPtr->mPlayer) >= MIN_SPEED_RUN_ON_WATER;
 }
 
 namespace PowerUps {
@@ -48,15 +49,16 @@ namespace PowerUps {
 		al::initJointLocalScaleController(model, &legScale, "LegL1");
 		al::initJointLocalScaleController(model, &legScale, "LegR1");
 
-		if (al::isExistArchive("ObjectData/PlayerHammer")) { // Classic Hammer
+		// Only build the hammer this suit uses: Brawl gets the Smash Hammer, everyone else the Classic one
+		if (isBrawl && al::isExistArchive("ObjectData/SmashHammer")) { // Smash Hammer
+			isSmashHammer = new HammerBrosHammer("HammerBrosHammer", model, "SmashHammer", true);
+			al::initCreateActorNoPlacementInfo(isSmashHammer, *actorInfo);
+			isHammer = isSmashHammer;
+		}
+		else if (al::isExistArchive("ObjectData/PlayerHammer")) { // Classic Hammer
 			isHammer = new HammerBrosHammer("HammerBrosHammer", model, "PlayerHammer", true);
 			al::initCreateActorNoPlacementInfo(isHammer, *actorInfo);
 		}
-		if (al::isExistArchive("ObjectData/SmashHammer")) { // Smash Hammer
-			isSmashHammer = new HammerBrosHammer("HammerBrosHammer", model, "SmashHammer", true);
-			al::initCreateActorNoPlacementInfo(isSmashHammer, *actorInfo);
-		}
-		if (isBrawl && isSmashHammer) isHammer = isSmashHammer; // Swap in Brawl suit
 
 		// Create and hide fireballs
 		fireBalls = new al::LiveActorGroup("FireBrosFireBall", 4);
@@ -114,8 +116,8 @@ namespace PowerUps {
 	}
 
 	inline void executeMovement(PlayerActorHakoniwa* thisPtr) {
-		auto* anim   = thisPtr->mAnimator;
-		auto* model  = thisPtr->mModelHolder->findModelActor("Normal");
+		auto* anim = thisPtr->mAnimator;
+		auto* model = thisPtr->mModelHolder->findModelActor("Normal");
 		auto* damage = thisPtr->mDamageKeeper;
 
 		bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
@@ -137,18 +139,18 @@ namespace PowerUps {
 		PlayerWeapon::update(thisPtr, model, isActive);
 
 		// Handle logic for Drill Suit
-		PlayerDrill::update(thisPtr);
+		PlayerDrill::update(thisPtr, model, isActive);
 
 		// Fireball / Iceball / Blaster
-		PlayerFireBall::update(thisPtr);
+		PlayerFireBall::update(thisPtr, model);
 
 		bool isGlide = al::isActionPlaying(model, "Glide");
 		bool isGliding = isGlide || al::isActionPlaying(model, "JumpBroad8") || al::isActionPlaying(model, "GlideFloatStart")
 			|| al::isActionPlaying(model, "GlideFloat") || al::isActionPlaying(model, "GlideFloatSuper");
-		bool isFloating = al::isActionPlaying(model, "TailFloat");
 
 		// Handle logic for Tanooki suit
 		if (isTanooki) {
+			bool isFloating = al::isActionPlaying(model, "TailFloat");
 			if (onGround) isNotFloat = false; // a glide blocks the float for the rest of the airtime
 
 			// Float: hold A/B while descending to hover
@@ -235,7 +237,7 @@ namespace PowerUps {
 				if (isGauge->isEmpty()) isGauge->startTimer();
 			}
 			// Penalty
-			if (isGauge->tickTimer()) { if (isGliding) al::setNerve(thisPtr, getNerveAt(nrvHakoniwaFall)); }
+			if (isGauge->tickTimer() && isGliding) al::setNerve(thisPtr, getNerveAt(nrvHakoniwaFall));
 			wasInAir = inAir;
 		}
 
@@ -283,10 +285,9 @@ namespace PowerUps {
 
 			// Apply effects for DashFastSuper
 			bool isDash = al::isPadHoldR(-1) && !isActionBusy() && al::isActionPlaying(model, "MoveSuper") && speedH >= dashBorder;
-			bool isGlide = al::isActionPlaying(model, "Glide") && !isActionBusy();
 
 			if (isDash) al::tryEmitEffect(model, "DashSuper", nullptr);
-			else if (isGlide) al::tryEmitEffect(model, "DashSuperGlide", nullptr);
+			else if (isGlide && !isActionBusy()) al::tryEmitEffect(model, "DashSuperGlide", nullptr);
 			else { al::tryDeleteEffect(model, "DashSuper"); al::tryDeleteEffect(model, "DashSuperGlide"); }
 
 			// Apply effects for Invincibility
@@ -367,8 +368,7 @@ namespace PowerUps {
 	// Blocks carry start while the hammer nerve owns the player
 	struct PlayerCarryKeeperStartCarry : public mallow::hook::Trampoline<PlayerCarryKeeperStartCarry> {
 		static void Callback(PlayerCarryKeeper* thisPtr, al::HitSensor* sensor) {
-			if (isHakoniwa && isHakoniwa->getNerveKeeper()
-				&& isHakoniwa->getNerveKeeper()->getCurrentNerve() == &HammerNrv) return;
+			if (isHakoniwa && al::isNerve(isHakoniwa, &HammerNrv)) return;
 
 			Orig(thisPtr, sensor);
 		}
@@ -380,6 +380,7 @@ namespace PowerUps {
 		using Base = mallow::hook::Trampoline<PlayerActorHakoniwaDoubleJump<Variant>>;
 		static void Callback(PlayerActorHakoniwa* thisPtr) {
 			Base::Orig(thisPtr);
+			if (!isBrawl && !isFeather && !isMario) return; // no suit here can double jump, skip the lookups
 
 			auto* model = thisPtr->mModelHolder->findModelActor("Normal");
 			auto* cape = al::tryGetSubActor(model, "ケープ");
@@ -394,7 +395,7 @@ namespace PowerUps {
 				isDoubleJumpConsume = true;
 
 				al::setVelocityY(thisPtr, 0.0f); // the Jump nerve lands next frame, a touchdown before then would eat it
-				(*reinterpret_cast<PlayerContinuousJump**>(reinterpret_cast<uintptr_t>(thisPtr) + 0x1B8))->clear(); // clear jump chain to always reset power
+				thisPtr->mContinuousJump->clear(); // clear jump chain to always reset power
 				if (isCape) al::tryStartSe(thisPtr, "CapeFloat");
 				al::tryEmitEffect(model, "DoubleJump", nullptr);
 				al::setNerve(thisPtr, getNerveAt(nrvHakoniwaJump));
@@ -496,9 +497,7 @@ namespace PowerUps {
 	struct PlayerConstGetHeadSlidingSpeed : public mallow::hook::Trampoline<PlayerConstGetHeadSlidingSpeed> {
 		static float Callback(const PlayerConst* thisPtr) {
 			float speed = Orig(thisPtr);
-
-			if (isHacking()) return speed;
-			if (isSuper) speed *= 1.5f;
+			if (isSuper && !isHacking()) speed *= 1.5f;
 			return speed;
 		}
 	};
@@ -543,11 +542,11 @@ namespace PowerUps {
 		}
 	};
 
-	// Metal has no mouth sounds
+	// Metal has no mouth sounds; they come from the 3D model's own action keeper, so only its update needs the stop
 	struct ActorActionKeeperUpdatePostHook : public mallow::hook::Trampoline<ActorActionKeeperUpdatePostHook> {
 		static void Callback(al::ActorActionKeeper* thisPtr) {
-			if (isMetal) ::al::stopAllSeFromUser(isHakoniwa, 0, "Mouth");
 			Orig(thisPtr);
+			if (isMetal && thisPtr->mParentActor == isMarioModel) ::al::stopAllSeFromUser(isHakoniwa, 0, "Mouth");
 		}
 	};
 

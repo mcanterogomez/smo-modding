@@ -14,20 +14,18 @@ public:
     // GaugeAir forwards
     void start()           { if (!mGauge->isAlive()) mGauge->start(); }
     void endMax()          { mGauge->endMax(); }
-    void fastEnd()         { mGauge->fastEnd(); }
-    bool isWait() const    { return mGauge->isWait(); }
     bool isAlive() const   { return mGauge->isAlive(); }
-    void setRate(float r) { 
-        mRate = (r < 0.f) ? 0.f : (r > 1.f) ? 1.f : r; 
-        mGauge->setRate(mRate); 
+    void setRate(float r) {
+        mRate = sead::Mathf::clamp(r, 0.0f, 1.0f);
+        mGauge->setRate(mRate);
     }
-    
+
     // Custom logic
     float getRate() const  { return mRate; }
     bool  isEmpty() const  { return mRate <= 0.0f; }
     void  drain()          { setRate(mRate - DRAIN_RATE); }
     void  refill()         { setRate(1.0f); mTimer = -1; }
-    
+
     void startTimer()      { if (mTimer < 0) mTimer = 0; }
     bool canUse() const    { return mTimer < 0; }
     bool tickTimer()       { return (mTimer >= 0) ? (++mTimer == EMPTY_DELAY) : false; }

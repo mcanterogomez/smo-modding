@@ -4,28 +4,28 @@
 // Handle stacked enemies
 inline bool handleStacked(al::LiveActor*& actor, al::HitSensor* target, al::HitSensor* source) {
 	if (!actor->getNerveKeeper()) return false;
-    if (isType(actor, "BreedaWanwan")) {
-        static bool(*tryBlowCap)(al::LiveActor*, al::HitSensor*) = nullptr;
-        if (!tryBlowCap) nn::ro::LookupSymbol(reinterpret_cast<uintptr_t*>(&tryBlowCap), "_ZN12BreedaWanwan10tryBlowCapEPN2al9HitSensorE");
-        while (tryBlowCap(actor, source)) {}
-        return true;
-    }
+	if (isType(actor, "BreedaWanwan")) {
+		static bool(*tryBlowCap)(al::LiveActor*, al::HitSensor*) = nullptr;
+		if (!tryBlowCap) nn::ro::LookupSymbol(reinterpret_cast<uintptr_t*>(&tryBlowCap), "_ZN12BreedaWanwan10tryBlowCapEPN2al9HitSensorE");
+		while (tryBlowCap(actor, source)) {}
+		return true;
+	}
 	if (isType(actor, "KuriboHack")) {
 		rs::sendMsgYoshiTongueEatBind(target, source, nullptr, nullptr, nullptr);
 		al::setNerve(actor, getNerveAt(0x1C9D888));
 		return true;
 	}
 	if (isType(actor, "StackerCap")) {
-        if (!al::isNerve(actor, getNerveAt(0x1C7B7F0)) && !al::isNerve(actor, getNerveAt(0x1C7B7F8))) return false; // OnHead, OnHeadAttack
-        al::LiveActor* host = *reinterpret_cast<al::LiveActor**>((char*)actor + 0x108);
-        int count = host && al::isAlive(host) ? *reinterpret_cast<int*>((char*)host + 0x154) : 0;
-        if (count <= 0) return false;
-        actor = (*reinterpret_cast<al::LiveActor***>(*reinterpret_cast<char**>((char*)host + 0x108) + 0x18))[count - 1]; // topCap
-        static bool(*blowCapOnHead)(al::LiveActor*, const sead::Vector3f&, const sead::Vector3f&) = nullptr;
-        if (!blowCapOnHead) nn::ro::LookupSymbol(reinterpret_cast<uintptr_t*>(&blowCapOnHead), "_ZN7Stacker13blowCapOnHeadERKN4sead7Vector3IfEES4_");
-        blowCapOnHead(host, al::getSensorPos(source), sead::Vector3f::zero);
-        return true;
-    }
+		if (!al::isNerve(actor, getNerveAt(0x1C7B7F0)) && !al::isNerve(actor, getNerveAt(0x1C7B7F8))) return false; // OnHead, OnHeadAttack
+		al::LiveActor* host = *reinterpret_cast<al::LiveActor**>((char*)actor + 0x108);
+		int count = host && al::isAlive(host) ? *reinterpret_cast<int*>((char*)host + 0x154) : 0;
+		if (count <= 0) return false;
+		actor = (*reinterpret_cast<al::LiveActor***>(*reinterpret_cast<char**>((char*)host + 0x108) + 0x18))[count - 1]; // topCap
+		static bool(*blowCapOnHead)(al::LiveActor*, const sead::Vector3f&, const sead::Vector3f&) = nullptr;
+		if (!blowCapOnHead) nn::ro::LookupSymbol(reinterpret_cast<uintptr_t*>(&blowCapOnHead), "_ZN7Stacker13blowCapOnHeadERKN4sead7Vector3IfEES4_");
+		blowCapOnHead(host, al::getSensorPos(source), sead::Vector3f::zero);
+		return true;
+	}
 	return false;
 }
 
@@ -42,11 +42,9 @@ inline bool trySendCapMsg(const al::LiveActor* actor, al::HitSensor* source) {
 
 // Set the swoon nerve for the actor
 inline bool trySwoon(al::LiveActor* actor, bool isSwoon = true) {
-	auto isExactType = [&](const char* name) {
-		char buf[64];
-		snprintf(buf, sizeof(buf), "%zu%s", strlen(name), name);
-		return al::isEqualString(typeid(*actor).name(), buf);
-	};
+	const char* type = typeid(*actor).name();
+	while (*type >= '0' && *type <= '9') type++; // skip the name's length prefix once, instead of formatting it for every candidate
+	auto isExactType = [&](const char* name) { return al::isEqualString(type, name); };
 
 	if (isExactType("FireBros") || isExactType("HammerBros")) { if (isSwoon) al::setNerve(*reinterpret_cast<al::IUseNerve**>((char*)actor + 0x130), getNerveAt(0x1C85DD0)); return true; }
 	if (isExactType("Imomu")) { if (isSwoon) al::setNerve(*reinterpret_cast<al::IUseNerve**>((char*)actor + 0x118), getNerveAt(0x1C94EB0)); return true; }

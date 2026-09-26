@@ -19,11 +19,13 @@ namespace PlayerCore {
             isKoopa = nullptr;
             isNearTarget = nullptr;
             battleStance = 0;
+            isSneaking = false;
 
             Orig(thisPtr, actorInfo, playerInfo);
 
             // Set Hakoniwa pointer
             isHakoniwa = thisPtr;
+            isMarioModel = thisPtr->mModelHolder->findModelActor("Normal");
 
             #ifdef ALLOW_POWERUPS
                 // Check for Super suit costume and cap
@@ -69,7 +71,7 @@ namespace PlayerCore {
             Orig(thisPtr);
 
             auto* anim = thisPtr->mAnimator;
-            auto* model  = thisPtr->mModelHolder->findModelActor("Normal");
+            auto* model = thisPtr->mModelHolder->findModelActor("Normal");
             bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
             bool isMove = thisPtr->mInput->isMove();
 
@@ -80,11 +82,10 @@ namespace PlayerCore {
             // Handle battle stance and idle cycle
             CustomAnimation::update(thisPtr);
 
-            // Toggle configs
-            if (al::isPadHoldL(-1) && al::isPadHoldPressLeftStick(-1)
+            // Toggle configs, not during captures, i-frames or cutscenes
+            bool isFlicker = thisPtr->mDamageKeeper && thisPtr->mDamageKeeper->mDamageInvalidCount > 0;
+            if (al::isPadHoldL(-1) && al::isPadHoldPressLeftStick(-1) && !isHacking() && !isFlicker && !rs::isActiveDemo(thisPtr)
             ) {
-                bool isFlicker = thisPtr->mDamageKeeper && thisPtr->mDamageKeeper->mDamageInvalidCount > 0;
-                if (isHacking() || isFlicker || rs::isActiveDemo(thisPtr)) return;
                 bool changed = false;
 
                 if (isPadTriggerGalaxySpin(-1)) { isConfig()->spinOnly = !isConfig()->spinOnly; changed = true; }
@@ -92,10 +93,8 @@ namespace PlayerCore {
                 else if (thisPtr->mInput->isTriggerJump()) { isConfig()->galaxySfx = !isConfig()->galaxySfx; changed = true; }
             #ifdef ALLOW_POWERUPS
                 else if (al::isPadTriggerZR(-1) && onGround
+                    && detectIsMario(GameDataFunction::getCurrentCostumeTypeName(thisPtr), GameDataFunction::getCurrentCapTypeName(thisPtr))
                 ) {
-                    const char* costume = GameDataFunction::getCurrentCostumeTypeName(thisPtr);
-                    const char* cap = GameDataFunction::getCurrentCapTypeName(thisPtr);
-                    if (!detectIsMario(costume, cap)) return;
                     isMario = !isMario;
                     isConfig()->enableMario = isMario;
                     isMarioActive = isMario ? 1 : -1;
@@ -109,11 +108,10 @@ namespace PlayerCore {
             }
 
             // Spin-type sensors all attack wall and ceiling contacts
-            const char* attackSensorNames[] = {"GalaxySpin", "DoubleSpin", "Punch"};
             al::HitSensor* attackSensors[3] = {
-                al::getHitSensor(thisPtr, attackSensorNames[0]),
-                al::getHitSensor(thisPtr, attackSensorNames[1]),
-                al::getHitSensor(thisPtr, attackSensorNames[2]),
+                al::getHitSensor(thisPtr, "GalaxySpin"),
+                al::getHitSensor(thisPtr, "DoubleSpin"),
+                al::getHitSensor(thisPtr, "Punch"),
             };
             for (auto* sensor : attackSensors) {
                 if (sensor && sensor->mIsValid) {
@@ -132,7 +130,7 @@ namespace PlayerCore {
                 bool animEnded = anim->isAnimEnd();
                 if (attackSensorRemaining == 0 || animEnded
                 ) {
-                    for (const char* name : attackSensorNames) al::invalidateHitSensor(thisPtr, name);
+                    for (auto* sensor : attackSensors) if (sensor) sensor->invalidate();
                     spin.isGalaxy = false;
                     attackSensorRemaining = -1;
                 }
@@ -144,7 +142,8 @@ namespace PlayerCore {
                 if (sensor && sensor->mIsValid) { activeSensor = sensor; break; }
             }
             // Handle wall bounce for hammer
-            if (!activeSensor && isHammer && al::isAlive(isHammer)) {
+            bool isHammerActive = isHammer && al::isAlive(isHammer);
+            if (!activeSensor && isHammerActive) {
                 al::HitSensor* sensorHack = al::getHitSensor(isHammer, "AttackHack");
                 if (sensorHack && sensorHack->mIsValid) activeSensor = sensorHack;
             }
@@ -153,7 +152,6 @@ namespace PlayerCore {
             if (activeSensor) attackFrames++;
             else attackFrames = 0;
 
-            bool isHammerActive = isHammer && al::isAlive(isHammer);
             bool isHammerWall = isHammerActive && al::isCollidedWall(isHammer);
             bool wallHit = rs::isCollidedWall(thisPtr->mCollider) || isHammerWall;
 
@@ -168,8 +166,7 @@ namespace PlayerCore {
                     al::tryStartSe(isHammer, "Hit");
                     al::setNerve(thisPtr, getNerveAt(nrvHakoniwaFall));
                 } else {
-                    auto* spinCap = *reinterpret_cast<PlayerStateSpinCap**>(reinterpret_cast<uintptr_t>(thisPtr) + 0x300);
-                    al::setNerve(spinCap, getNerveAt(nrvSpinCapFall));
+                    al::setNerve(thisPtr->mStateSpinCap, getNerveAt(nrvSpinCapFall));
                 }
 
                 al::tryEmitEffect(thisPtr, "HitSmall", &wallPos);
@@ -179,29 +176,29 @@ namespace PlayerCore {
             }
 
             // Push wind-blow map parts along their rail, away from whatever hit them
-			constexpr float pushSpeed = 1.0f; // rail units/frame while pushing
-			static bool wasPushing = false;
-			al::HitSensor* wallSensor = isHammerWall ? al::tryGetCollidedWallSensor(isHammer) : rs::tryGetCollidedWallSensor(thisPtr->mCollider);
+            constexpr float pushSpeed = 1.0f; // rail units/frame while pushing
+            static bool wasPushing = false;
+            al::HitSensor* wallSensor = isHammerWall ? al::tryGetCollidedWallSensor(isHammer) : rs::tryGetCollidedWallSensor(thisPtr->mCollider);
+            al::LiveActor* part = wallSensor ? al::getSensorHost(wallSensor) : nullptr;
 
-			if (wallSensor && isType(al::getSensorHost(wallSensor), "WindBlowMapParts")
-			) {
-				al::LiveActor* part = al::getSensorHost(wallSensor);
-				al::LiveActor* pusher = isHammerWall ? static_cast<al::LiveActor*>(isHammer) : thisPtr;
-				float dir = al::sign(al::getRailDir(part).dot(al::getTrans(part) - al::getTrans(pusher)));
+            if (part && isType(part, "WindBlowMapParts")) {
+                al::LiveActor* pusher = isHammerWall ? static_cast<al::LiveActor*>(isHammer) : thisPtr;
+                const sead::Vector3f& railDir = al::getRailDir(part);
+                float dir = al::sign(railDir.dot(al::getTrans(part) - al::getTrans(pusher)));
 
-				if (anim->isAnim("Push")) al::setSyncRailToCoord(part, al::getRailCoord(part) + dir * pushSpeed);
-				else if (activeSensor) {
-					float pushForce = (al::getSensorHost(activeSensor) == isHammer) ? 150.0f : 50.0f;
-					rs::sendMsgByugoBlow(wallSensor, wallSensor, al::getRailDir(part) * (dir * pushForce));
-					if (!wasPushing) {
-						sead::Vector3f hitPos = isHammerWall ? al::getCollidedWallPos(isHammer) : rs::getCollidedWallPos(thisPtr->mCollider);
-						al::tryEmitEffect(thisPtr, "HitSmall", &hitPos);
-						al::tryStartSe(thisPtr, "HitImpact");
-						wasPushing = true;
-					}
-				}
-			}
-			if (!activeSensor) wasPushing = false;
+                if (anim->isAnim("Push")) al::setSyncRailToCoord(part, al::getRailCoord(part) + dir * pushSpeed);
+                else if (activeSensor) {
+                    float pushForce = (al::getSensorHost(activeSensor) == isHammer) ? 150.0f : 50.0f;
+                    rs::sendMsgByugoBlow(wallSensor, wallSensor, railDir * (dir * pushForce));
+                    if (!wasPushing) {
+                        sead::Vector3f hitPos = isHammerWall ? al::getCollidedWallPos(isHammer) : rs::getCollidedWallPos(thisPtr->mCollider);
+                        al::tryEmitEffect(thisPtr, "HitSmall", &hitPos);
+                        al::tryStartSe(thisPtr, "HitImpact");
+                        wasPushing = true;
+                    }
+                }
+            }
+            if (!activeSensor) wasPushing = false;
 
             // Reset proximity flag
             isNearCollectible = false;
@@ -219,12 +216,8 @@ namespace PlayerCore {
 
                     if (!actor) continue;
 
-                    if (al::isEqualSubString(typeid(*actor).name(), "Radish")
-                        || al::isEqualSubString(typeid(*actor).name(), "BossRaidRivet")
-                        || al::isEqualSubString(typeid(*actor).name(), "Stake")) { isNearCollectible = true; isNearTarget = actor; break;}
-
-                    if (al::isEqualSubString(typeid(*actor).name(), "TreasureBox")
-                        && !al::isModelName(actor, "TreasureBoxWood")) { isNearTreasure = true; isNearTarget = actor; break; }
+                    if (isAnyType(actor, "Radish", "BossRaidRivet", "Stake")) { isNearCollectible = true; isNearTarget = actor; break; }
+                    if (isType(actor, "TreasureBox") && !al::isModelName(actor, "TreasureBoxWood")) { isNearTreasure = true; isNearTarget = actor; break; }
 
                     if (al::isSensorEnemyBody(other)
                         && (al::isActionPlaying(actor, "SwoonStart") || al::isActionPlaying(actor, "SwoonStartLand")
@@ -243,7 +236,7 @@ namespace PlayerCore {
                 const char* actionName = al::getActionName(face);
 
                 if (isWater && (!al::isEqualSubString(actionName, "Swim") || al::isEqualSubString(actionName, "Spin")))
-                    al::startActionSubActor(model, "顔", "SwimStand");
+                    al::startAction(face, "SwimStand");
 
                 bool tauntSmash = al::isActionPlaying(model, "TauntSmash") || al::isActionPlaying(model, "TauntSmash01");
 
@@ -252,7 +245,7 @@ namespace PlayerCore {
                 if (isMetal || anim->isAnim("BattleWait")) faceAnim = "AreaWaitFight01";
                 else if ((isBrawl && !tauntSmash) || isSuper) faceAnim = "WaitAngry";
 
-                if (faceAnim && !al::isActionPlayingSubActor(model, "顔", faceAnim)) al::startActionSubActor(model, "顔", faceAnim);
+                if (faceAnim && !al::isActionPlaying(face, faceAnim)) al::startAction(face, faceAnim);
             }
 
             // Handle guard window

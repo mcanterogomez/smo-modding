@@ -244,7 +244,6 @@ inline bool prevIsCarry = false;
 inline bool isSpinActive = false;
 inline bool isSpinRethrow = false;
 inline bool isPunchRight = false;
-inline bool isJumpPunchActive = false;
 inline bool isDoubleJump = false;
 inline bool isDoubleJumpConsume = false;
 inline bool isNotFloat = false;
@@ -262,6 +261,7 @@ inline bool isSneaking = false;
 // =========================================================
 
 inline PlayerActorHakoniwa* isHakoniwa = nullptr;
+inline al::LiveActor* isMarioModel = nullptr; // the player's 3D model, only compared against, so a stale one between stages is harmless
 inline HammerBrosHammer* isHammer = nullptr;
 inline HammerBrosHammer* isSmashHammer = nullptr;
 inline CustomGauge* isGauge = nullptr;
@@ -341,6 +341,7 @@ inline void isHitEffect(al::LiveActor* thisPtr, al::LiveActor* targetHost, const
 }
 
 inline bool isInHitBuffer(const al::LiveActor* actor) {
+	if (hitBufferCount >= 0x40) return true; // full: every writer checks here first, so nothing writes past the end
 	for (int i = 0; i < hitBufferCount; i++) {
 		if (hitBuffer[i] == actor) return true;
 	}
@@ -408,8 +409,8 @@ inline bool isHacking() { return isHakoniwa && isHakoniwa->mHackKeeper && isHako
 
 // Underwater and too deep for the surface to matter
 inline bool isSubmerged(const PlayerActorHakoniwa* player) {
-    auto* wsf = player->mWaterSurfaceFinder;
-    return al::isInWater(player) && !(wsf && wsf->isFoundSurface() && wsf->getDistance() <= 80.0f);
+	auto* wsf = player->mWaterSurfaceFinder;
+	return al::isInWater(player) && !(wsf && wsf->isFoundSurface() && wsf->getDistance() <= 80.0f);
 }
 
 // =========================================================
@@ -431,17 +432,9 @@ struct SpinState {
 		canStandard = true;
 		queued = isSpin::None;
 	}
-
-	void reset() {
-		resetForNewSpin();
-		isGalaxy = false;
-		trigger = false;
-		fakethrowRemainder = -1;
-	}
 };
 
 inline SpinState spin;
-enum class SpinPre { Fallthrough, Accept, Reject };
 
 // =========================================================
 //                   ANIMATION CHECKS

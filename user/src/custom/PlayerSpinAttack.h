@@ -61,7 +61,7 @@ namespace PlayerSpinAttack {
 
 			if ((al::isPadTriggerR(-1) || al::isPadHoldZR(-1))
 				&& !rs::is2D(player)
-				&& !player->mCarryKeeper->isCarry()
+				&& !newIsCarry
 				&& !PlayerEquipmentFunction::isEquipmentNoCapThrow(player->mEquipmentUser)) canAction = true;
 
 			if (Base::Orig(player, a2)) { spin.trigger = false; return true; }
@@ -183,6 +183,7 @@ namespace PlayerSpinAttack {
 
 			auto* anim = isHakoniwa->mAnimator;
 			bool isPunch = anim->isAnim("PunchR") || anim->isAnim("PunchL");
+			bool isHoming = anim->isAnim("RabbitGet") || anim->isAnim("Kick");
 			float frame = anim->getAnimFrame();
 
 			// New attack: reset the hit state, spins hit straight away
@@ -191,8 +192,10 @@ namespace PlayerSpinAttack {
 				spin.isGalaxy = !isPunch;
 				isSpinActive = true;
 				hitBufferCount = 0;
-				if (!isPunchAnim(anim)) attackSensorRemaining = 32;
-				if (!isPunchAnim(anim) && !isSwingAnim(anim)) al::validateHitSensor(thisPtr->mActor, "GalaxySpin");
+				if (!isPunchAnim(anim)) {
+					attackSensorRemaining = 32;
+					if (!isSwingAnim(anim)) al::validateHitSensor(thisPtr->mActor, "GalaxySpin");
+				}
 			}
 
 			// Lunges
@@ -202,9 +205,9 @@ namespace PlayerSpinAttack {
 			// Everything else hits once its windup is over, like on land
 			if (isSwingAnim(anim) && frame == 4.0f) al::validateHitSensor(thisPtr->mActor, "GalaxySpin");
 			else if (isPunch && frame >= 6.0f) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 6; }
-			else if ((anim->isAnim("RabbitGet") && frame >= 7.0f) || (anim->isAnim("Kick") && frame >= 2.0f)) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 15; }
+			else if (isHoming && frame >= (anim->isAnim("RabbitGet") ? 7.0f : 2.0f)) { al::validateHitSensor(thisPtr->mActor, "Punch"); attackSensorRemaining = 15; }
 
-			if (anim->isAnim("RabbitGet") || anim->isAnim("Kick")) applyHomeIn(isHakoniwa, isNearTarget); // same homing as on land
+			if (isHoming) applyHomeIn(isHakoniwa, isNearTarget); // same homing as on land
 		}
 	};
 
@@ -336,7 +339,7 @@ namespace PlayerSpinAttack {
 
 		TryCapSpinHook<0>::InstallAtSymbol("_ZN19PlayerActorHakoniwa26tryActionCapSpinAttackImplEb");
 		TryCapSpinHook<1>::InstallAtSymbol("_ZN19PlayerActorHakoniwa29tryActionCapSpinAttackBindEndEv");
-        PlayerJudgeStartSquatHook::InstallAtSymbol("_ZNK21PlayerJudgeStartSquat5judgeEv");
+		PlayerJudgeStartSquatHook::InstallAtSymbol("_ZNK21PlayerJudgeStartSquat5judgeEv");
 
 		#ifndef ALLOW_CAPPY_ONLY
 			// Modify triggers

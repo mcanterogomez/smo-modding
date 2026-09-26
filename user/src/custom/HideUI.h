@@ -21,7 +21,6 @@ extern "C" {
 }
 
 namespace HideUI {
-    inline bool isHide = false;
     inline bool isPending = false;
 
     template <typename T>
@@ -67,7 +66,6 @@ namespace HideUI {
                     else showAll(layout);
                     mallow::config::saveConfig();
                 }
-                if (isHakoniwa) al::tryStartSe(isHakoniwa, isConfig()->isHide ? "CameraSubjectiveOff" : "CameraSubjectiveOn");
                 return;
             }
             if (isPending && al::isPadHoldAny(-1)) { isPending = false; hideAll(layout); }

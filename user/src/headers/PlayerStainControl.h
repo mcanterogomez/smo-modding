@@ -4,7 +4,7 @@
 class PlayerStainControl {
 public:
     // This wipes Mario clean (useful for ending the taunt)
-    void clearStain(); 
+    void clearStain();
 
     // These set the "Dirt Level" to max and apply the texture immediately
     void recordDamageFire(); // Applies the Soot/Burn texture

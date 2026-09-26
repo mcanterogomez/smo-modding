@@ -54,11 +54,11 @@ inline void applyGroundStop(PlayerActorHakoniwa* player) {
 }
 
 // Custom Nerves
-class PlayerStateSpinCapNrvGalaxySpinGround; 
-extern PlayerStateSpinCapNrvGalaxySpinGround GalaxySpinGround; 
+class PlayerStateSpinCapNrvGalaxySpinGround;
+extern PlayerStateSpinCapNrvGalaxySpinGround GalaxySpinGround;
 
-class PlayerStateSpinCapNrvGalaxySpinAir; 
-extern PlayerStateSpinCapNrvGalaxySpinAir GalaxySpinAir; 
+class PlayerStateSpinCapNrvGalaxySpinAir;
+extern PlayerStateSpinCapNrvGalaxySpinAir GalaxySpinAir;
 
 class PlayerStateSpinCapNrvGalaxySpinGround : public al::Nerve {
 public:
@@ -85,15 +85,10 @@ public:
 
             if (!isSpinning) {
                 if (!isCarrying && (isNearCollectible || isNearTreasure || isNearSwoonedEnemy)) anim->startAnim(isNearCollectible ? "RabbitGet" : "Kick");
-                else if (didSpin) {
-                    anim->startSubAnim(spinDir > 0 ? "SpinAttackLeft" : "SpinAttackRight");
-                    anim->startAnim(spinDir > 0 ? "SpinAttackLeft" : "SpinAttackRight");
-                    al::validateHitSensor(state->mActor, "DoubleSpin");
-                    attackSensorRemaining = 41;
-                }
-                else if (isRotatingL || isRotatingR) {
-                    anim->startSubAnim(isRotatingL ? "SpinAttackLeft" : "SpinAttackRight");
-                    anim->startAnim(isRotatingL ? "SpinAttackLeft" : "SpinAttackRight");
+                else if (didSpin || isRotatingL || isRotatingR) {
+                    const char* spinAnim = (didSpin ? spinDir > 0 : isRotatingL) ? "SpinAttackLeft" : "SpinAttackRight";
+                    anim->startSubAnim(spinAnim);
+                    anim->startAnim(spinAnim);
                     al::validateHitSensor(state->mActor, "DoubleSpin");
                     attackSensorRemaining = 41;
                 }
@@ -197,7 +192,7 @@ public:
             if (!isLow && isFrame == 4.0f) al::validateHitSensor(state->mActor, "GalaxySpin"); // windup first, like the punch
             if (isLow && !rs::isOnGround(player, player->mCollider)) { al::setNerve(state, getNerveAt(nrvSpinCapFall)); return;}
         }
-        else if ((anim->isAnim("RabbitGet") && isFrame == 7.0f) || (anim->isAnim("Kick") && isFrame == 2.0f)) al::validateHitSensor(state->mActor, "Punch");
+        else if (isHoming && isFrame == (anim->isAnim("RabbitGet") ? 7.0f : 2.0f)) al::validateHitSensor(state->mActor, "Punch");
 
         if (!isJumpPunch && !isBowserPunch && !isLow) state->updateSpinGroundNerve();
         if (isHoming) applyHomeIn(player, isNearTarget); // runs last, the move control steers back out of it otherwise
@@ -213,7 +208,7 @@ public:
         PlayerActorHakoniwa* player = static_cast<PlayerActorHakoniwa*>(state->mActor);
 
         isSpinActive = true;
-        
+
         if(al::isFirstStep(state)) {
             bool isSpinning = anim->isAnim("SpinSeparate");
             bool isRotatingAirL = anim->isAnim("StartSpinJumpL") || anim->isAnim("RestartSpinJumpL");
@@ -226,13 +221,8 @@ public:
             tryEndSubAnim(anim);
 
             if (!isSpinning) {
-                if (didSpin) {
-                    anim->startAnim(spinDir > 0 ? "SpinAttackAirLeft" : "SpinAttackAirRight");
-                    al::validateHitSensor(state->mActor, "DoubleSpin");
-                    attackSensorRemaining = 41;
-                }
-                else if (isRotatingAirL || isRotatingAirR) {
-                    anim->startAnim(isRotatingAirL ? "SpinAttackAirLeft" : "SpinAttackAirRight");
+                if (didSpin || isRotatingAirL || isRotatingAirR) {
+                    anim->startAnim((didSpin ? spinDir > 0 : isRotatingAirL) ? "SpinAttackAirLeft" : "SpinAttackAirRight");
                     al::validateHitSensor(state->mActor, "DoubleSpin");
                     attackSensorRemaining = 41;
                 }
@@ -265,7 +255,7 @@ public:
                 }
             }
         }
-        
+
         state->updateSpinAirNerve();
 
         if (anim->isAnim("SwingAirAttack") && anim->getAnimFrame() == 4.0f) al::validateHitSensor(state->mActor, "GalaxySpin"); // windup first, like the punch
@@ -287,7 +277,6 @@ public:
         if (al::isFirstStep(player)) {
             tryEndSubAnim(anim);
             anim->startAnim("TauntSmash");
-            //anim->startAnim(isBrawl ? "TauntSmash" : (isMetal || isSuper) ? "WearEndSuper" : "WearEnd");
         }
 
         applyGroundStop(player);
@@ -422,7 +411,7 @@ public:
         }
 
         // Air -> Ground transition
-        if (onGround && (anim->isAnim("RollingStart") || anim->isAnim("Rolling"))) {
+        else if (anim->isAnim("RollingStart") || anim->isAnim("Rolling")) {
             tryEndSubAnim(anim);
             anim->startAnim("HammerAttack");
             al::tryStartAction(isHammer, "Wait");

@@ -5,8 +5,8 @@ namespace KoopaBattle {
 
 	inline bool isKnockBack = false;
 
-    // Reads Bowser's internal kill-ready flag
-    inline bool isKillReady(const al::LiveActor* koopa) {
+	// Reads Bowser's internal kill-ready flag
+	inline bool isKillReady(const al::LiveActor* koopa) {
 		if (!koopa || !al::isAlive(koopa)) return false;
 		auto* cap = *reinterpret_cast<void**>((char*)koopa + 264);
 		if (!cap) return false;
@@ -15,11 +15,11 @@ namespace KoopaBattle {
 		return *reinterpret_cast<int*>((char*)player + 292) == 1;
 	}
 
-    // Detects when Bowser accepts knockback (tail attack starts)
-    struct AttackTailHook : public mallow::hook::Trampoline<AttackTailHook> {
+	// Detects when Bowser accepts knockback (tail attack starts)
+	struct AttackTailHook : public mallow::hook::Trampoline<AttackTailHook> {
 		static bool Callback(void* counter, void* cap) {
 			bool isStart = Orig(counter, cap);
-			if (isStart && isKoopa && isHakoniwa) isKnockBack = true;
+			if (isStart) isKnockBack = true; // only read inside attack(), which clears it right before
 			return isStart;
 		}
 	};
@@ -37,15 +37,14 @@ namespace KoopaBattle {
 			isHandled = isKnockBack;
 		}
 
-        if (!isHandled
-            && !rs::sendMsgKoopaCapPunchInvincibleL(target, source)
-            && !rs::sendMsgKoopaCapPunchL(target, source)) return;
+		if (!isHandled
+			&& !rs::sendMsgKoopaCapPunchInvincibleL(target, source)
+			&& !rs::sendMsgKoopaCapPunchL(target, source)) return;
 
-        // Pushback Mario when Bowser accepts knockback
-        if (isKnockBack) {
+		// Pushback Mario when Bowser accepts knockback
+		if (isKnockBack) {
 			al::tryStartSe(mario, "DamageHit");
-			auto* spinCap = *reinterpret_cast<PlayerStateSpinCap**>(reinterpret_cast<uintptr_t>(mario) + 0x300);
-			al::setNerve(spinCap, getNerveAt(nrvSpinCapFall));
+			al::setNerve(mario->mStateSpinCap, getNerveAt(nrvSpinCapFall));
 			al::setVelocityBlowAttackAndTurnToTarget(mario, al::getTrans(bowser), mario->mInput->isMove() ? 25.0f : 15.0f, 20.0f);
 		}
 

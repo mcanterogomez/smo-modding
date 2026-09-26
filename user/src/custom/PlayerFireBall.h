@@ -36,12 +36,11 @@ namespace PlayerFireBall {
 		}
 	}
 
-	inline void update(PlayerActorHakoniwa* thisPtr) {
-		// Idle and nothing can start: skip the actor lookups below
+	inline void update(PlayerActorHakoniwa* thisPtr, al::LiveActor* model) {
+		// Idle and nothing can start: skip the work below
 		if (fireStep == Idle && (!(isMario || isFire || isIce || isBrawl || isSuper) || !al::isPadTriggerR(-1))) { canAction = false; return; }
 
 		auto* anim = thisPtr->mAnimator;
-		auto* model = thisPtr->mModelHolder->findModelActor("Normal");
 
 		bool isBlast = PlayerWeapon::isShooting(); // only a weapon that shoots, an axe or a wrench throws the normal shot
 		al::LiveActorGroup* pool = isBlast ? tankBullets : (isIce ? iceBalls : fireBalls);
@@ -49,7 +48,7 @@ namespace PlayerFireBall {
 		bool wasAction = canAction; // read half of the latch: the clear below runs on every path
 		static int shotFrame = 0; // only the spawn cares about frames
 
-		canAction = false; // one-frame latch: TryCapSpinPre stops running during a capture
+		canAction = false; // one-frame latch: TryCapSpinHook stops running during a capture
 		if (!pool) return;
 
 		switch (fireStep) {

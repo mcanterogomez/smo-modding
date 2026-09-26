@@ -34,37 +34,38 @@ namespace AttackSensor {
             if (!thisPtr || !source || !target) return;
 
             al::LiveActor* targetHost = al::getSensorHost(target);
-            bool isAttackSensor = al::isSensorName(source, "GalaxySpin") || al::isSensorName(source, "DoubleSpin") || al::isSensorName(source, "Punch") || al::isSensorName(source, "HipDropKnockDown");
+            bool isGalaxySensor = al::isSensorName(source, "GalaxySpin");
+            bool isDoubleSensor = al::isSensorName(source, "DoubleSpin");
+            bool isPunchSensor = al::isSensorName(source, "Punch");
+            bool isHipDropSensor = al::isSensorName(source, "HipDropKnockDown");
+            bool isAttackSensor = isGalaxySensor || isDoubleSensor || isPunchSensor || isHipDropSensor;
 
             if (!isAttackSensor || isInHitBuffer(targetHost)) { Orig(thisPtr, source, target); return; }
             if (!isValidAttackTarget(target) || al::isSensorName(target, "Brake") || isType(targetHost, "KoopaCap", "KoopaCap")
                 || (isType(targetHost, "FireBall") && al::calcSpeedH(thisPtr) >= thisPtr->mConst->getDashFastBorderSpeed())) return;
 
             setupHitEffect(source, target);
-            sead::Vector3f fireDir = getFireDir(thisPtr, targetHost);
 
-            bool isSpinAttack = al::isSensorName(source, "GalaxySpin")
+            bool isSpinAttack = isGalaxySensor
                 && (isBaseSpinAnim(thisPtr->mAnimator)
                     || isJumpPunchAnim(thisPtr->mAnimator)
                     || isDrillAnim(thisPtr->mAnimator) // Allow drill attacks
                     || al::isActionPlaying(thisPtr->mModelHolder->findModelActor("Normal"), "MoveSuper")
                     || al::isEqualString(thisPtr->mAnimator->mCurAnim, "JumpBroad8") || al::isEqualString(thisPtr->mAnimator->mCurAnim, "Glide"));
 
-            bool isDoubleSpinAttack = al::isSensorName(source, "DoubleSpin")
+            bool isDoubleSpinAttack = isDoubleSensor
                 && isDoubleSpinAnim(thisPtr->mAnimator);
 
             bool isSpinFallback = spin.isGalaxy
-                && (al::isSensorName(source, "GalaxySpin") || al::isSensorName(source, "DoubleSpin"));
+                && (isGalaxySensor || isDoubleSensor);
 
-            bool isPunchAttack = al::isSensorName(source, "Punch")
+            bool isPunchAttack = isPunchSensor
                 && isPunchAnim(thisPtr->mAnimator);
 
-            bool isHipDrop = al::isSensorName(source, "HipDropKnockDown")
+            bool isHipDrop = isHipDropSensor
                 && isHipDropAnim(thisPtr->mAnimator);
 
-            al::HitSensor* foot = al::getHitSensor(thisPtr, "Foot");
-            bool canTrample = rs::isEnableSendTrampleMsg(thisPtr, foot, target);
-            bool isHipDropAttack = isHipDrop && !canTrample;
+            bool isHipDropAttack = isHipDrop && !rs::isEnableSendTrampleMsg(thisPtr, al::getHitSensor(thisPtr, "Foot"), target);
 
             if (isSpinAttack || isDoubleSpinAttack || isPunchAttack
                 || isHipDropAttack || isSpinFallback
@@ -89,7 +90,7 @@ namespace AttackSensor {
                 bool isStake = isType(targetHost, "Stake") && sourceNrv == getNerveAt(0x1D36D20);
                 bool isRadish = isType(targetHost, "Radish") && sourceNrv == getNerveAt(0x1D22B70);
                 bool isRivet = isType(targetHost, "BossRaidRivet") && sourceNrv == getNerveAt(0x1C5F330);
-                bool isSwitch = isType(targetHost, "CapSwitch");
+                bool isSwitch = isType(targetHost, "CapSwitch"); // substring match, so timers count too
                 bool isTimer = isType(targetHost, "CapSwitchTimer");
 
                 if (isStake || isRadish || isRivet) {
@@ -104,20 +105,21 @@ namespace AttackSensor {
                     }
                     return;
                 }
-                if (isSwitch || isTimer) {
+                if (isSwitch) {
                     if (isTimer) al::invalidateClipping(targetHost);
-                    al::setNerve(targetHost, isSwitch ? getNerveAt(0x1CE3E18) : getNerveAt(0x1CE4338));
+                    al::setNerve(targetHost, getNerveAt(isTimer ? 0x1CE4338 : 0x1CE3E18)); // CapSwitchTimerNrvHitReaction : CapSwitchNrvHitReaction
                     hitBuffer[hitBufferCount++] = targetHost;
                     isHitEffect(thisPtr, targetHost);
                     return;
                 }
-                if (thisPtr->mAnimator->isAnim("SpinLow")
-                    && (trySwoon(targetHost, false) || isAnyType(targetHost, "Ball", "Bomb", "Togezo", "!Damage"))
+                bool isSpinLow = thisPtr->mAnimator->isAnim("SpinLow");
+                bool canSwoon = isSpinLow && trySwoon(targetHost, false); // only SpinLow swoons, so skip the type scan otherwise
+                if (isSpinLow && (canSwoon || isAnyType(targetHost, "Ball", "Bomb", "Togezo", "!Damage"))
                 ) {
                     bool isHit = trySendCapMsg(targetHost, source);
-                    if (isHit || isType(targetHost, "FireBall") || trySwoon(targetHost, false)
+                    if (isHit || isType(targetHost, "FireBall") || canSwoon
                     ) {
-                        if (trySwoon(targetHost, false)) trySwoon(targetHost);
+                        trySwoon(targetHost);
                         handleStacked(targetHost, target, source);
                         if (!isHit && al::isCollidedGround(targetHost)
                             && al::isExistAction(targetHost, "Walk")) al::setVelocityBlowAttack(targetHost, al::getTrans(thisPtr), 12.5f, 25.0f);
@@ -129,6 +131,7 @@ namespace AttackSensor {
                 bool isBlock = isAnyType(targetHost, "BlockHard", "Marching");
                 if (isBlock || isAnyType(targetHost, "Ball", "Board", "Bomb", "Break", "Bull", "Church", "Golem", "KickStone", "Moon", "Souvenir", "TreasureBox")
                 ) {
+                    sead::Vector3f fireDir = getFireDir(thisPtr, targetHost);
                     if ((!isBlock || al::isSensorCollision(target))
                         && (rs::sendMsgHammerBrosHammerHackAttack(target, source) || al::sendMsgExplosion(target, source, nullptr)
                             || rs::sendMsgBullHackAttack(target, source) || rs::sendMsgTsukkunThrust(target, source, fireDir, 0, true)
@@ -252,14 +255,16 @@ namespace AttackSensor {
             auto* source = reinterpret_cast<al::HitSensor*>(ctx->X[20]);
             auto* target = reinterpret_cast<al::HitSensor*>(ctx->X[21]);
 
+            // Enemy fireballs share this class, so rule them out by name before the heavier checks
+            if (ctx->W[0] || (!al::isEqualString(fireball->getName(), "MarioFireBall")
+                && !al::isEqualString(fireball->getName(), "MarioIceBall"))) return;
+
             al::LiveActor* targetHost = al::getSensorHost(target);
-            if (!isValidAttackTarget(target) || isType(targetHost, "KoopaCap", "KoopaCap")            
-                || (!al::isEqualString(fireball->getName(), "MarioFireBall")
-                    && !al::isEqualString(fireball->getName(), "MarioIceBall"))) return;
+            if (!isValidAttackTarget(target) || isType(targetHost, "KoopaCap", "KoopaCap")) return;
 
             setupHitEffect(source, target);
 
-            if (!ctx->W[0] && (rs::sendMsgHackAttack(target, source) || al::sendMsgExplosion(target, source, nullptr)
+            if ((rs::sendMsgHackAttack(target, source) || al::sendMsgExplosion(target, source, nullptr)
                 || al::sendMsgKickStoneAttackReflect(target, source) || rs::sendMsgBullHackAttack(target, source)
                 || rs::sendMsgKoopaCapPunchL(target, source))
             ) {
@@ -274,10 +279,12 @@ namespace AttackSensor {
             auto* bullet = reinterpret_cast<TankBullet*>(ctx->X[19]);
             auto* source = reinterpret_cast<al::HitSensor*>(ctx->X[22]);
             auto* target = reinterpret_cast<al::HitSensor*>(ctx->X[21]);
-            
+
+            // Enemy tank bullets share this class, so rule them out by name before the heavier checks
+            if (!al::isEqualString(bullet->getName(), "MarioTankBullet")) return;
+
             al::LiveActor* targetHost = al::getSensorHost(target);
-            if (!isValidAttackTarget(target) || isType(targetHost, "KoopaCap", "KoopaCap")            
-                || !al::isEqualString(bullet->getName(), "MarioTankBullet")) return;
+            if (!isValidAttackTarget(target) || isType(targetHost, "KoopaCap", "KoopaCap")) return;
 
             rs::sendMsgSeedAttackBig(target, source);
 

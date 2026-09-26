@@ -261,7 +261,7 @@ inline bool isSneaking = false;
 // =========================================================
 
 inline PlayerActorHakoniwa* isHakoniwa = nullptr;
-inline al::LiveActor* isMarioModel = nullptr; // the player's 3D model, only compared against, so a stale one between stages is harmless
+inline al::LiveActor* isMarioModel = nullptr; // the player's 3D model ("Normal"), set with isHakoniwa in initPlayer
 inline HammerBrosHammer* isHammer = nullptr;
 inline HammerBrosHammer* isSmashHammer = nullptr;
 inline CustomGauge* isGauge = nullptr;

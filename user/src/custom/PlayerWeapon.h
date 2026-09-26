@@ -55,7 +55,7 @@ namespace PlayerWeapon {
 	inline bool isAttack() {
 		Weapon setup = get();
 		if (setup.isHeld) return isWeaponOn;
-		return isConfig()->spinOnly && isHakoniwa && find(isHakoniwa->mModelHolder->findModelActor("Normal"), setup.attack);
+		return isConfig()->spinOnly && isMarioModel && find(isMarioModel, setup.attack);
 	}
 
 	// Out and staying out, so it shows between attacks

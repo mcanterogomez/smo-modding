@@ -16,17 +16,15 @@ namespace PlayerSneak {
 		return &pos;
 	}
 
-	// Swaps Walk to WalkSoft while the stick is held lightly, and slows Mario to a sneak
+	// Swaps Walk to WalkSoft while the stick is held lightly
 	struct AnimControlRunUpdateHook : public mallow::hook::Trampoline<AnimControlRunUpdateHook> {
 		static void Callback(PlayerAnimControlRun* thisPtr, f32 speed, const sead::Vector3f& moveInput) {
 			Orig(thisPtr, speed, moveInput);
 
 			static float t = 1.0f;
 			if (al::isFirstStep(isHakoniwa)) t = 1.0f; // clear stale blend when movement restarts
-			isSneaking = moveInput.length() < 0.25f; // 0.25f: stick tilt below this counts as "slow"
-
+			isSneaking = isHakoniwa->mInput->isMove() && moveInput.length() < 0.25f; // 0.25f: stick tilt below this counts as "slow"
 			t = al::converge(t, isSneaking ? 0.0f : 1.0f, 0.1f); // 0.1f: blend speed once it commits
-			if (isSneaking) al::limitVelocityH(isHakoniwa, isHakoniwa->mConst->getNormalMinSpeed() * (isMetal ? 1.25f : 2.5f)); // sneak ceiling, lower is slower
 
 			float* w = thisPtr->mAnimator->mSklAnimBlendWeights;
 			if (w[0] <= 0.0f) return; // Run/Dash/DashFast tier, no Walk to split

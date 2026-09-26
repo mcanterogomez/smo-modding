@@ -71,7 +71,6 @@ namespace PlayerCore {
             Orig(thisPtr);
 
             auto* anim = thisPtr->mAnimator;
-            auto* model = thisPtr->mModelHolder->findModelActor("Normal");
             bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
             bool isMove = thisPtr->mInput->isMove();
 
@@ -230,7 +229,7 @@ namespace PlayerCore {
             updateAttackSensor(thisPtr, "HipDropKnockDown", isHipDropAnim(anim), wasAttackMove);
 
             // Change face animations
-            al::LiveActor* face = al::tryGetSubActor(model, "顔");
+            al::LiveActor* face = al::tryGetSubActor(isMarioModel, "顔");
             if (face) {
                 bool isWater = !thisPtr->mWaterSurfaceFinder->isFoundSurface() && al::isInWater(thisPtr);
                 const char* actionName = al::getActionName(face);
@@ -238,7 +237,7 @@ namespace PlayerCore {
                 if (isWater && (!al::isEqualSubString(actionName, "Swim") || al::isEqualSubString(actionName, "Spin")))
                     al::startAction(face, "SwimStand");
 
-                bool tauntSmash = al::isActionPlaying(model, "TauntSmash") || al::isActionPlaying(model, "TauntSmash01");
+                bool tauntSmash = al::isActionPlaying(isMarioModel, "TauntSmash") || al::isActionPlaying(isMarioModel, "TauntSmash01");
 
                 // Metal and the battle stance fight, Brawl and Super glare the rest of the time
                 const char* faceAnim = nullptr;

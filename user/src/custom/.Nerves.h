@@ -290,8 +290,7 @@ public:
     void execute(al::NerveKeeper* keeper) const override {
         auto* player = keeper->getParent<PlayerActorHakoniwa>();
         auto* anim = player->mAnimator;
-        auto* model = player->mModelHolder->findModelActor("Normal");
-        auto* cape = al::tryGetSubActor(model, "ケープ");
+        auto* cape = al::tryGetSubActor(isMarioModel, "ケープ");
 
         if (al::isFirstStep(player)) {
             tryEndSubAnim(anim);
@@ -303,7 +302,7 @@ public:
                 else if (isFire || isIce || isSuper) anim->startAnim("TauntSuper");
                 else anim->startAnim("AreaWait64");
             }
-            else if ((isMario || isBrawl || isSuper) && !PlayerWeapon::find(model, "Blaster")) anim->startAnim("TauntSmash01"); // a model carrying the blaster keeps the default taunt
+            else if ((isMario || isBrawl || isSuper) && !PlayerWeapon::find(isMarioModel, "Blaster")) anim->startAnim("TauntSmash01"); // a model carrying the blaster keeps the default taunt
             else anim->startAnim("TauntMario");
         }
 
@@ -313,7 +312,7 @@ public:
             if (al::isStep(player, 25)) {
                 if (cape) cape->appear();
                 isCapeActive = 1200;
-                al::tryEmitEffect(model, "Appear", nullptr);
+                al::tryEmitEffect(isMarioModel, "Appear", nullptr);
                 al::tryStartSe(player, "Appear"); al::tryStartSe(player, "CapeGet");
             }
         }
@@ -327,11 +326,11 @@ public:
 
             if (al::isStep(player, 14)) {
                 if (isMarioActive == 1) { player->mDamageKeeper->invalidate(60); al::tryStartSe(player, "HrPowerUpNormal"); }
-                if (isFire || isSuper || isMarioActive == 1) al::tryEmitEffect(model, "BonfireSuper", nullptr);
-                if (isIce) al::tryEmitEffect(model, "IceEffect", nullptr);
+                if (isFire || isSuper || isMarioActive == 1) al::tryEmitEffect(isMarioModel, "BonfireSuper", nullptr);
+                if (isIce) al::tryEmitEffect(isMarioModel, "IceEffect", nullptr);
                 if (isSuper) {
                     al::tryEmitEffect(player, "InvincibleStart", nullptr);
-                    al::tryEmitEffect(model, "LandFall", nullptr);
+                    al::tryEmitEffect(isMarioModel, "LandFall", nullptr);
                     al::tryStartSe(player, "StartInvincible");
                 }
                 if (isFire || isIce || isSuper || isMarioActive == 1) al::tryStartSe(player, "FireOn");
@@ -344,11 +343,10 @@ public:
     // Also covers an interrupted taunt, which never reaches isAnimEnd
     void executeOnEnd(al::NerveKeeper* keeper) const override {
         auto* player = keeper->getParent<PlayerActorHakoniwa>();
-        auto* model = player->mModelHolder->findModelActor("Normal");
 
         isMarioActive = 0;
-        al::tryDeleteEffect(model, "BonfireSuper");
-        al::tryDeleteEffect(model, "IceEffect");
+        al::tryDeleteEffect(isMarioModel, "BonfireSuper");
+        al::tryDeleteEffect(isMarioModel, "IceEffect");
         al::tryStopSe(player, "FireOn", -1, nullptr);
     }
 };
@@ -358,9 +356,8 @@ inline sead::Matrix34f hammerMtx;
 
 // Hangs the hammer between both hands and gives back where it sits
 inline sead::Vector3f updateHammerMtx() {
-    auto* model = isHakoniwa->mModelHolder->findModelActor("Normal");
-    const sead::Matrix34f* mL = al::getJointMtxPtr(model, "ArmL2");
-    const sead::Matrix34f* mR = al::getJointMtxPtr(model, "ArmR2");
+    const sead::Matrix34f* mL = al::getJointMtxPtr(isMarioModel, "ArmL2");
+    const sead::Matrix34f* mR = al::getJointMtxPtr(isMarioModel, "ArmR2");
     if (!mL || !mR) return al::getTrans(isHammer);
 
     sead::Vector3f mid = (mL->getTranslation() + mR->getTranslation()) * 0.5f;
@@ -381,7 +378,6 @@ public:
     void execute(al::NerveKeeper* keeper) const override {
         auto* player = keeper->getParent<PlayerActorHakoniwa>();
         auto* anim = player->mAnimator;
-        auto* model = player->mModelHolder->findModelActor("Normal");
         bool onGround = rs::isOnGround(player, player->mCollider);
 
         if (al::isFirstStep(player)) {
@@ -439,14 +435,13 @@ public:
         if (al::isAlive(isHammer)) PlayerWeapon::setFade(isHammer, false, anim, al::getNerveStep(player), "HammerAttack");
 
         // The belt hammer stands in while the big one is out
-        PlayerWeapon::showCarry(model, "Hammer", al::isDead(isHammer));
+        PlayerWeapon::showCarry(isMarioModel, "Hammer", al::isDead(isHammer));
 
         if (anim->isAnimEnd()) al::setNerve(player, getNerveAt(onGround ? nrvHakoniwaWait : nrvHakoniwaFall));
     }
 
     void executeOnEnd(al::NerveKeeper* keeper) const override {
-        auto* player = keeper->getParent<PlayerActorHakoniwa>();
-        PlayerWeapon::showCarry(player->mModelHolder->findModelActor("Normal"), "Hammer", true);
+        PlayerWeapon::showCarry(isMarioModel, "Hammer", true);
         if (isHammer) { al::invalidateHitSensor(isHammer, "AttackHack"); isHammer->makeActorDead(); }
     }
 };

@@ -18,9 +18,8 @@ inline void cleanupSpinAttackState(al::LiveActor* actor) {
 	al::invalidateHitSensor(actor, "GalaxySpin");
 	al::invalidateHitSensor(actor, "DoubleSpin");
 
-	auto* model = isHakoniwa->mModelHolder->findModelActor("Normal");
-	al::tryDeleteEffect(model, "SpinAttack");
-	al::tryStopSe(model, "SpinAttack", -1, nullptr);
+	al::tryDeleteEffect(isMarioModel, "SpinAttack");
+	al::tryStopSe(isMarioModel, "SpinAttack", -1, nullptr);
 }
 
 namespace PlayerSpinAttack {
@@ -231,10 +230,8 @@ namespace PlayerSpinAttack {
 			else if (isNearTreasure || isNearSwoonedEnemy) animator->startAnim("Kick");
 			else if (isFeather || (!isGround && isMario && isCapeOn)) animator->startAnim("CapeAttack");
 			else if (isTanooki) animator->startAnim("TailAttack");
-			else if (isGround) {
-				if (PlayerWeapon::isAttack()) animator->startAnim("SwingAttack");
-				else { isPunchRight = !isPunchRight; animator->startAnim(isPunchRight ? "PunchR" : "PunchL"); }
-			}
+			else if (isGround && PlayerWeapon::isAttack()) animator->startAnim("SwingAttack");
+			else if (isGround && !isConfig()->spinOnly) { isPunchRight = !isPunchRight; animator->startAnim(isPunchRight ? "PunchR" : "PunchL"); }
 			else if (PlayerWeapon::isAttack()) animator->startAnim("SwingAirAttack");
 			else {
 				animator->startAnim("SpinSeparateSwim");

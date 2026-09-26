@@ -50,7 +50,7 @@ namespace AttackSensor {
                 && (isBaseSpinAnim(thisPtr->mAnimator)
                     || isJumpPunchAnim(thisPtr->mAnimator)
                     || isDrillAnim(thisPtr->mAnimator) // Allow drill attacks
-                    || al::isActionPlaying(thisPtr->mModelHolder->findModelActor("Normal"), "MoveSuper")
+                    || al::isActionPlaying(isMarioModel, "MoveSuper")
                     || al::isEqualString(thisPtr->mAnimator->mCurAnim, "JumpBroad8") || al::isEqualString(thisPtr->mAnimator->mCurAnim, "Glide"));
 
             bool isDoubleSpinAttack = isDoubleSensor

@@ -40,30 +40,29 @@ namespace PowerUps {
 	};
 
 	inline void executeInitPlayer(PlayerActorHakoniwa* thisPtr, const al::ActorInitInfo* actorInfo, const PlayerInitInfo* playerInfo) {
-		auto* model = thisPtr->mModelHolder->findModelActor("Normal");
 		// Clear joint modifiers
 		glideRot = {0.0f, 0.0f, 0.0f};
 
 		// Handle joint modifiers
-		al::initJointLocalRotator(model, &glideRot, "JointRoot");
-		al::initJointLocalScaleController(model, &legScale, "LegL1");
-		al::initJointLocalScaleController(model, &legScale, "LegR1");
+		al::initJointLocalRotator(isMarioModel, &glideRot, "JointRoot");
+		al::initJointLocalScaleController(isMarioModel, &legScale, "LegL1");
+		al::initJointLocalScaleController(isMarioModel, &legScale, "LegR1");
 
 		// Only build the hammer this suit uses: Brawl gets the Smash Hammer, everyone else the Classic one
 		if (isBrawl && al::isExistArchive("ObjectData/SmashHammer")) { // Smash Hammer
-			isSmashHammer = new HammerBrosHammer("HammerBrosHammer", model, "SmashHammer", true);
+			isSmashHammer = new HammerBrosHammer("HammerBrosHammer", isMarioModel, "SmashHammer", true);
 			al::initCreateActorNoPlacementInfo(isSmashHammer, *actorInfo);
 			isHammer = isSmashHammer;
 		}
 		else if (al::isExistArchive("ObjectData/PlayerHammer")) { // Classic Hammer
-			isHammer = new HammerBrosHammer("HammerBrosHammer", model, "PlayerHammer", true);
+			isHammer = new HammerBrosHammer("HammerBrosHammer", isMarioModel, "PlayerHammer", true);
 			al::initCreateActorNoPlacementInfo(isHammer, *actorInfo);
 		}
 
 		// Create and hide fireballs
 		fireBalls = new al::LiveActorGroup("FireBrosFireBall", 4);
 		while (!fireBalls->isFull()) {
-			auto* fb = new FireBrosFireBall("MarioFireBall", model);
+			auto* fb = new FireBrosFireBall("MarioFireBall", isMarioModel);
 			al::initCreateActorNoPlacementInfo(fb, *actorInfo);
 			fireBalls->registerActor(fb);
 		}
@@ -73,7 +72,7 @@ namespace PowerUps {
 		if (al::isExistArchive("ObjectData/PlayerIceBall")) {
 			iceBalls = new al::LiveActorGroup("PlayerIceBall", 4);
 			while (!iceBalls->isFull()) {
-				auto* ib = new FireBrosFireBall("MarioIceBall", model);
+				auto* ib = new FireBrosFireBall("MarioIceBall", isMarioModel);
 				al::initCreateActorNoPlacementInfo(ib, *actorInfo);
 				iceBalls->registerActor(ib);
 			}
@@ -117,7 +116,6 @@ namespace PowerUps {
 
 	inline void executeMovement(PlayerActorHakoniwa* thisPtr) {
 		auto* anim = thisPtr->mAnimator;
-		auto* model = thisPtr->mModelHolder->findModelActor("Normal");
 		auto* damage = thisPtr->mDamageKeeper;
 
 		bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
@@ -136,21 +134,21 @@ namespace PowerUps {
 			&& !al::isNerve(thisPtr, &HammerNrv)) { isHammer->makeActorDead(); al::invalidateHitSensor(isHammer, "AttackHack"); }
 
 		// Handle weapon arming and swapping
-		PlayerWeapon::update(thisPtr, model, isActive);
+		PlayerWeapon::update(thisPtr, isMarioModel, isActive);
 
 		// Handle logic for Drill Suit
-		PlayerDrill::update(thisPtr, model, isActive);
+		PlayerDrill::update(thisPtr, isMarioModel, isActive);
 
 		// Fireball / Iceball / Blaster
-		PlayerFireBall::update(thisPtr, model);
+		PlayerFireBall::update(thisPtr, isMarioModel);
 
-		bool isGlide = al::isActionPlaying(model, "Glide");
-		bool isGliding = isGlide || al::isActionPlaying(model, "JumpBroad8") || al::isActionPlaying(model, "GlideFloatStart")
-			|| al::isActionPlaying(model, "GlideFloat") || al::isActionPlaying(model, "GlideFloatSuper");
+		bool isGlide = al::isActionPlaying(isMarioModel, "Glide");
+		bool isGliding = isGlide || al::isActionPlaying(isMarioModel, "JumpBroad8") || al::isActionPlaying(isMarioModel, "GlideFloatStart")
+			|| al::isActionPlaying(isMarioModel, "GlideFloat") || al::isActionPlaying(isMarioModel, "GlideFloatSuper");
 
 		// Handle logic for Tanooki suit
 		if (isTanooki) {
-			bool isFloating = al::isActionPlaying(model, "TailFloat");
+			bool isFloating = al::isActionPlaying(isMarioModel, "TailFloat");
 			if (onGround) isNotFloat = false; // a glide blocks the float for the rest of the airtime
 
 			// Float: hold A/B while descending to hover
@@ -170,28 +168,28 @@ namespace PowerUps {
 			// TailFloat SE loops every 15 frames
 			static int floatSeTimer = 0;
 			if (!isFloating) floatSeTimer = 0;
-			else if (--floatSeTimer <= 0) { al::tryStartSe(model, "TailFloat"); floatSeTimer = 15; }
+			else if (--floatSeTimer <= 0) { al::tryStartSe(isMarioModel, "TailFloat"); floatSeTimer = 15; }
 
 			// Tail spins through both the glide and the float
-			auto* tail = al::tryGetSubActor(model, "尻尾");
+			auto* tail = al::tryGetSubActor(isMarioModel, "尻尾");
 			bool spinTail = isGliding || isFloating;
 
 			if (tail && al::isAlive(tail)) {
 				if (spinTail && !al::isActionPlaying(tail, "TailSpin")) {
 					al::tryStartAction(tail, "TailSpin");
-					al::tryEmitEffect(model, "TailSpin", nullptr);
+					al::tryEmitEffect(isMarioModel, "TailSpin", nullptr);
 					al::tryStartSe(thisPtr, "SpinJumpDownFall");
 				}
 				else if (!spinTail && al::isActionPlaying(tail, "TailSpin")) {
 					al::tryStartAction(tail, "Wait");
-					al::tryDeleteEffect(model, "TailSpin");
+					al::tryDeleteEffect(isMarioModel, "TailSpin");
 					al::tryStopSe(thisPtr, "SpinJumpDownFall", -1, nullptr);
 				}
 			}
 		}
 
 		// Handle logic for Cape suits
-		auto* cape = al::tryGetSubActor(model, "ケープ");
+		auto* cape = al::tryGetSubActor(isMarioModel, "ケープ");
 		isCapeOn = cape && al::isAlive(cape);
 
 		if (isCapeOn) {
@@ -205,7 +203,7 @@ namespace PowerUps {
 			if (!isCapeOn) isCapeActive = -1;
 			else if (isMarioActive == -1 || capeTimer) {
 				cape->kill();
-				al::tryEmitEffect(model, "AppearBloom", nullptr);
+				al::tryEmitEffect(isMarioModel, "AppearBloom", nullptr);
 				al::tryStartSe(thisPtr, "Bloom");
 				isCapeActive = -1;
 			}
@@ -217,7 +215,7 @@ namespace PowerUps {
 			static bool wasStartup = false;
 			static bool hadStartup = false;
 			bool inAir = !onGround && !isWater;
-			bool isStartup = al::isActionPlaying(model, "JumpBroad8");
+			bool isStartup = al::isActionPlaying(isMarioModel, "JumpBroad8");
 
 			// Landing
 			if (wasInAir && !inAir && isGauge->isAlive()) {
@@ -253,25 +251,25 @@ namespace PowerUps {
 
 		// Handle logic for Flying suit
 		if (isFly) {
-			if (isActive && !al::isHideModel(model)) {
+			if (isActive && !al::isHideModel(isMarioModel)) {
 				if (isGliding) {
-					al::tryDeleteEffect(model, "GlideWindL");
-					al::tryDeleteEffect(model, "GlideWindR");
-					al::tryDeleteEffect(model, "FlyingState");
+					al::tryDeleteEffect(isMarioModel, "GlideWindL");
+					al::tryDeleteEffect(isMarioModel, "GlideWindR");
+					al::tryDeleteEffect(isMarioModel, "FlyingState");
 
-					al::tryEmitEffect(model, "FlyingL", nullptr);
-					al::tryEmitEffect(model, "FlyingLTrail", nullptr);
-					al::tryEmitEffect(model, "FlyingR", nullptr);
-					al::tryEmitEffect(model, "FlyingRTrail", nullptr);
+					al::tryEmitEffect(isMarioModel, "FlyingL", nullptr);
+					al::tryEmitEffect(isMarioModel, "FlyingLTrail", nullptr);
+					al::tryEmitEffect(isMarioModel, "FlyingR", nullptr);
+					al::tryEmitEffect(isMarioModel, "FlyingRTrail", nullptr);
 				} else {
-					al::tryDeleteEffect(model, "FlyingL");
-					al::tryDeleteEffect(model, "FlyingLTrail");
-					al::tryDeleteEffect(model, "FlyingR");
-					al::tryDeleteEffect(model, "FlyingRTrail");
+					al::tryDeleteEffect(isMarioModel, "FlyingL");
+					al::tryDeleteEffect(isMarioModel, "FlyingLTrail");
+					al::tryDeleteEffect(isMarioModel, "FlyingR");
+					al::tryDeleteEffect(isMarioModel, "FlyingRTrail");
 
-					al::tryEmitEffect(model, "FlyingState", nullptr);
+					al::tryEmitEffect(isMarioModel, "FlyingState", nullptr);
 				}
-			} else al::tryKillEmitterAndParticleAll(model);
+			} else al::tryKillEmitterAndParticleAll(isMarioModel);
 		}
 
 		// Handle logic for Super suit
@@ -284,22 +282,22 @@ namespace PowerUps {
 			updateAttackSensor(thisPtr, "GalaxySpin", isMoveSuper, wasMoveSuper);
 
 			// Apply effects for DashFastSuper
-			bool isDash = al::isPadHoldR(-1) && !isActionBusy() && al::isActionPlaying(model, "MoveSuper") && speedH >= dashBorder;
+			bool isDash = al::isPadHoldR(-1) && !isActionBusy() && al::isActionPlaying(isMarioModel, "MoveSuper") && speedH >= dashBorder;
 
-			if (isDash) al::tryEmitEffect(model, "DashSuper", nullptr);
-			else if (isGlide && !isActionBusy()) al::tryEmitEffect(model, "DashSuperGlide", nullptr);
-			else { al::tryDeleteEffect(model, "DashSuper"); al::tryDeleteEffect(model, "DashSuperGlide"); }
+			if (isDash) al::tryEmitEffect(isMarioModel, "DashSuper", nullptr);
+			else if (isGlide && !isActionBusy()) al::tryEmitEffect(isMarioModel, "DashSuperGlide", nullptr);
+			else { al::tryDeleteEffect(isMarioModel, "DashSuper"); al::tryDeleteEffect(isMarioModel, "DashSuperGlide"); }
 
 			// Apply effects for Invincibility
-			if (isActive && !al::isHideModel(model)) {
+			if (isActive && !al::isHideModel(isMarioModel)) {
 				if (damage) {
 					if (!damage->mIsPreventDamage) damage->activatePreventDamage();
 					damage->mInvincibilityTimer = INT_MAX;
 				}
-				al::tryEmitEffect(model, "Bonfire", nullptr);
+				al::tryEmitEffect(isMarioModel, "Bonfire", nullptr);
 			} else {
 				if (isHacking() && damage) damage->mInvincibilityTimer = 0;
-				al::tryDeleteEffect(model, "Bonfire");
+				al::tryDeleteEffect(isMarioModel, "Bonfire");
 			}
 		}
 
@@ -335,7 +333,7 @@ namespace PowerUps {
 			else if (!wasDash && speedH >= dashBorder) {
 				const char* fx = isSuper ? "AccelSecond" : "Accel";
 				al::tryStartSe(thisPtr, fx);
-				al::tryEmitEffect(model, fx, nullptr);
+				al::tryEmitEffect(isMarioModel, fx, nullptr);
 				wasDash = true;
 			}
 		#endif
@@ -382,8 +380,7 @@ namespace PowerUps {
 			Base::Orig(thisPtr);
 			if (!isBrawl && !isFeather && !isMario) return; // no suit here can double jump, skip the lookups
 
-			auto* model = thisPtr->mModelHolder->findModelActor("Normal");
-			auto* cape = al::tryGetSubActor(model, "ケープ");
+			auto* cape = al::tryGetSubActor(isMarioModel, "ケープ");
 			bool isCape = isFeather || (isMario && cape && al::isAlive(cape));
 
 			// Mario needs the cape out, Brawl always has it
@@ -397,7 +394,7 @@ namespace PowerUps {
 				al::setVelocityY(thisPtr, 0.0f); // the Jump nerve lands next frame, a touchdown before then would eat it
 				thisPtr->mContinuousJump->clear(); // clear jump chain to always reset power
 				if (isCape) al::tryStartSe(thisPtr, "CapeFloat");
-				al::tryEmitEffect(model, "DoubleJump", nullptr);
+				al::tryEmitEffect(isMarioModel, "DoubleJump", nullptr);
 				al::setNerve(thisPtr, getNerveAt(nrvHakoniwaJump));
 			}
 
@@ -444,12 +441,11 @@ namespace PowerUps {
 			glideRot += (target - glideRot) * (isGlide ? 0.025f : 0.2f);
 
 			if (al::isFirstStep(thisPtr)) {
-				auto* model = thisPtr->mModelHolder->findModelActor("Normal");
-				auto* cape = al::tryGetSubActor(model, "ケープ");
+				auto* cape = al::tryGetSubActor(isMarioModel, "ケープ");
 
 				if ((isMario || isBrawl) && cape && al::isDead(cape)) {
 					cape->appear();
-					al::tryEmitEffect(model, "Appear", nullptr);
+					al::tryEmitEffect(isMarioModel, "Appear", nullptr);
 					al::tryStartSe(thisPtr, "Appear"); al::tryStartSe(thisPtr, "CapeGet");
 				}
 				anim->startAnim("JumpBroad8");
@@ -518,26 +514,23 @@ namespace PowerUps {
 		}
 	};
 
-	// Dash ramps the ground speed cap through the windup, wading scales the curve and blocks dashing
+	// Ground speed cap for this update: wading, dash and sneak, vanilla's restored after
 	struct PlayerActionGroundMoveControlUpdate : public mallow::hook::Trampoline<PlayerActionGroundMoveControlUpdate> {
 		static float Callback(PlayerActionGroundMoveControl* thisPtr) {
-			float update = Orig(thisPtr);
+			if (isHacking()) return Orig(thisPtr);
 
-			if (isHacking()) return update;
-			bool isWading = isMetal && isSubmerged(isHakoniwa);
-
-			float maxSpeed = 14.0f; // walk/run cap
+			float isMaxSpeed = thisPtr->mMaxSpeed;
+			if (isMetal && isSubmerged(isHakoniwa)) thisPtr->mMaxSpeed *= 0.6f;
 			#ifdef ALLOW_DASH
-				if (!isWading && isDashDelay >= 0 && !isActionBusy()) {
+				else if (isDashDelay >= 0 && !isActionBusy()) {
 					float full = isSuper ? 28.0f : 21.0f; // dash tier
-					if (isDashDelay == 0) maxSpeed = full; // Windup sits halfway to the dash tier, held under the border so the anim stays on Dash
-					else maxSpeed = sead::Mathf::min((14.0f + full) * 0.5f, thisPtr->mConst->getDashFastBorderSpeed() - 0.5f);
+					thisPtr->mMaxSpeed = isDashDelay == 0 ? full : sead::Mathf::min((isMaxSpeed + full) * 0.5f, thisPtr->mConst->getDashFastBorderSpeed() - 0.5f); // windup: halfway, under the border
 				}
 			#endif
-			if (isWading) maxSpeed *= 0.6f; // wading: scale the target so stick tilt still prorates
+			else if (isSneaking) thisPtr->mMaxSpeed = thisPtr->mConst->getNormalMinSpeed() * (isMetal ? 1.25f : 2.5f); // sneak ceiling
 
-			const_cast<PlayerConst*>(thisPtr->mConst)->mNormalMaxSpeed = maxSpeed;
-			thisPtr->mMaxSpeed = maxSpeed;
+			float update = Orig(thisPtr);
+			thisPtr->mMaxSpeed = isMaxSpeed;
 			return update;
 		}
 	};

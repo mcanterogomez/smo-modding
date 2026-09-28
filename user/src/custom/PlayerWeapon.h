@@ -55,7 +55,7 @@ namespace PlayerWeapon {
 	inline bool isAttack() {
 		Weapon setup = get();
 		if (setup.isHeld) return isWeaponOn;
-		return isConfig()->spinOnly && isHakoniwa && find(isHakoniwa->mModelHolder->findModelActor("Normal"), setup.attack);
+		return isConfig()->spinOnly && isMarioModel && find(isMarioModel, setup.attack);
 	}
 
 	// Out and staying out, so it shows between attacks
@@ -64,9 +64,9 @@ namespace PlayerWeapon {
 	// Armed with a weapon that shoots
 	inline bool isShooting() { return isArmed() && get().isShoot; }
 
-	inline void update(PlayerActorHakoniwa* player, al::LiveActor* model, bool isActive) {
+	inline void update(PlayerActorHakoniwa* player, bool isActive) {
 		Weapon setup = get();
-		auto* weapon = find(model, setup.attack);
+		auto* weapon = find(isMarioModel, setup.attack);
 		if (!weapon) { isWeaponOn = false; return; }
 
 		auto* anim = player->mAnimator;
@@ -80,7 +80,7 @@ namespace PlayerWeapon {
 
 			if ((isActive && holdFrames == 30) || (isOut && isMarioActive == -1)) {
 				isOut ? weapon->kill() : weapon->appear();
-				al::tryEmitEffect(model, isOut ? "BlasterDisappear" : "BlasterAppear", nullptr);
+				al::tryEmitEffect(isMarioModel, isOut ? "BlasterDisappear" : "BlasterAppear", nullptr);
 				al::tryStartSe(player, "BlasterOpen");
 			}
 		}
@@ -94,13 +94,13 @@ namespace PlayerWeapon {
 			}
 			else if (isOut) weapon->kill();
 
-			showCarry(model, setup.carry, !isSwinging);
+			showCarry(isMarioModel, setup.carry, !isSwinging);
 		}
 
 		isWeaponOn = al::isAlive(weapon);
 
 		// Hand action while it is out
-		auto* hand = isWeaponOn && setup.pose ? find(model, "右手") : nullptr;
+		auto* hand = isWeaponOn && setup.pose ? find(isMarioModel, "右手") : nullptr;
 		if (hand && !al::isActionPlaying(hand, setup.pose)) al::startAction(hand, setup.pose);
 	}
 

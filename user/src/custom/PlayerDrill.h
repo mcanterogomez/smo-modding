@@ -11,23 +11,23 @@ namespace PlayerDrill {
 	inline sead::Vector3f stickGravity = defaultGravity;
 	inline const al::Nerve* drillNerve = nullptr; // the state the drill plays in; anything else took the body
 
-	inline void enterDrill(al::LiveActor* model) {
-		al::hideModelIfShow(model);
-		al::hideSilhouetteModelIfShow(model);
-		al::tryStartSe(model, "DrillIn");
+	inline void enterDrill() {
+		al::hideModelIfShow(isMarioModel);
+		al::hideSilhouetteModelIfShow(isMarioModel);
+		al::tryStartSe(isMarioModel, "DrillIn");
 	}
 
-	inline void exitDrill(al::LiveActor* model) {
-		al::showModelIfHide(model);
-		al::showSilhouetteModelIfHide(model);
-		al::tryStopSe(model, "DrillMove", -1, nullptr);
-		al::tryStartSe(model, "DrillOut");
+	inline void exitDrill() {
+		al::showModelIfHide(isMarioModel);
+		al::showSilhouetteModelIfHide(isMarioModel);
+		al::tryStopSe(isMarioModel, "DrillMove", -1, nullptr);
+		al::tryStartSe(isMarioModel, "DrillOut");
 	}
 
-	inline void popDrill(al::LiveActor* model) {
-		exitDrill(model);
-		al::tryEmitEffect(model, "LandFall", nullptr);
-		al::tryStartSe(model, "DrillSpin");
+	inline void popDrill() {
+		exitDrill();
+		al::tryEmitEffect(isMarioModel, "LandFall", nullptr);
+		al::tryStartSe(isMarioModel, "DrillSpin");
 
 		if (isHakoniwa) {
 			al::validateHitSensor(isHakoniwa, "GalaxySpin");
@@ -61,15 +61,15 @@ namespace PlayerDrill {
 	}
 
 	// Start the drill-out anim (moving vs standing) and hand off to Exit
-	inline void startDrillOut(PlayerActorHakoniwa* thisPtr, al::LiveActor* model, bool isMoving) {
+	inline void startDrillOut(PlayerActorHakoniwa* thisPtr, bool isMoving) {
 		resetGravity(thisPtr);
 		thisPtr->mAnimator->startSubAnim(isMoving ? "DrillOutFast" : "DrillOut");
-		exitDrill(model);
+		exitDrill();
 		drillStep = Exit;
 	}
 
 	// Wall-stick state machine
-	inline void updateWall(PlayerActorHakoniwa* thisPtr, al::LiveActor* model) {
+	inline void updateWall(PlayerActorHakoniwa* thisPtr) {
 		auto* anim = thisPtr->mAnimator;
 		auto* input = thisPtr->mInput;
 		bool onGround = rs::isPlayerOnGround(thisPtr);
@@ -102,7 +102,7 @@ namespace PlayerDrill {
 			case Enter: {
 				drillNerve = thisPtr->getNerveKeeper()->getCurrentNerve(); // the forced Fall has resolved by now
 				if (!anim->isSubAnim("DrillIn") || anim->isSubAnimEnd()) {
-					enterDrill(model);
+					enterDrill();
 					drillStep = Active;
 				}
 				break;
@@ -114,22 +114,22 @@ namespace PlayerDrill {
 
 				// Jump: pop out. Don't reset gravity — jump uses it to launch
 				if (input->isTriggerJump()) {
-					popDrill(model);
+					popDrill();
 					drillStep = Idle;
 					break;
 				}
 
 				// ZR released: drill out
-				if (!isHoldZR) { startDrillOut(thisPtr, model, isMove); break; }
+				if (!isHoldZR) { startDrillOut(thisPtr, isMove); break; }
 
 				// Stay stuck: wall takes priority, then raycast, else lost -> drill out
 				if (onWall) snapGravityToWall(thisPtr);
-				else if (!onGround && !isFoundSurface(thisPtr)) { startDrillOut(thisPtr, model, true); break; }
+				else if (!onGround && !isFoundSurface(thisPtr)) { startDrillOut(thisPtr, true); break; }
 
 				// Fx + sound
-				al::tryEmitEffect(model, "DrillMove", nullptr);
-				if (isMove && !al::checkIsPlayingSe(model, "DrillMove", nullptr)) al::tryStartSe(model, "DrillMove");
-				else if (!isMove) al::tryStopSe(model, "DrillMove", -1, nullptr);
+				al::tryEmitEffect(isMarioModel, "DrillMove", nullptr);
+				if (isMove && !al::checkIsPlayingSe(isMarioModel, "DrillMove", nullptr)) al::tryStartSe(isMarioModel, "DrillMove");
+				else if (!isMove) al::tryStopSe(isMarioModel, "DrillMove", -1, nullptr);
 				break;
 			}
 
@@ -142,10 +142,10 @@ namespace PlayerDrill {
 	}
 
 	// Full drill update: subactor, visuals, wall-stick, sensors
-	inline void update(PlayerActorHakoniwa* thisPtr, al::LiveActor* model, bool isActive) {
+	inline void update(PlayerActorHakoniwa* thisPtr, bool isActive) {
 		if (!isDrill) return;
 
-		auto* drill = al::tryGetSubActor(model, "Drill");
+		auto* drill = al::tryGetSubActor(isMarioModel, "Drill");
 		auto* anim = thisPtr->mAnimator;
 
 		bool controllable = !isHacking() && !rs::isActiveDemo(thisPtr); // not captured or in a demo
@@ -159,11 +159,11 @@ namespace PlayerDrill {
 			if (drillDrop && al::isDead(drill)) {
 				drill->appear();
 				al::tryStartAction(drill, "DrillSpin");
-				al::tryEmitEffect(model, "DrillSpinDrop", nullptr);
-				al::tryStartSe(model, "DrillSpin");
+				al::tryEmitEffect(isMarioModel, "DrillSpinDrop", nullptr);
+				al::tryStartSe(isMarioModel, "DrillSpin");
 			} else if (!drillDrop && al::isAlive(drill)) drill->kill();
 		}
-		if (!inHipDrop || inLand) al::tryDeleteEffect(model, "DrillSpinDrop");
+		if (!inHipDrop || inLand) al::tryDeleteEffect(isMarioModel, "DrillSpinDrop");
 
 		float legTarget = drillDrop ? 0.0f : 1.0f;
 		legScale.set(legTarget, legTarget, legTarget);
@@ -173,22 +173,22 @@ namespace PlayerDrill {
 			if (drillDrop) anim->forceCapOff();
 			else anim->forceCapOn();
 
-			auto* head = al::tryGetSubActor(model, "頭");
+			auto* head = al::tryGetSubActor(isMarioModel, "頭");
 			const char* headAction = isDrillAnim(anim) ? "DrillSpin" : "DrillWait";
 			if (head && !al::isActionPlaying(head, headAction)) al::tryStartAction(head, headAction);
 		}
 
 		// Active-only mechanics
 		if (isActive && capOn) {
-			if (!inHipDrop || !rs::isCollidedWall(thisPtr->mCollider)) updateWall(thisPtr, model);
+			if (!inHipDrop || !rs::isCollidedWall(thisPtr->mCollider)) updateWall(thisPtr);
 
 			bool isDrillAttack = isDrillAnim(anim);
 			static bool wasDrillAttack = false;
 			updateAttackSensor(thisPtr, "GalaxySpin", isDrillAttack, wasDrillAttack);
 
 			if (drillSensorRemaining > 0) {
-				al::tryEmitEffect(model, "DrillSpin", nullptr);
-				if (--drillSensorRemaining == 0) al::tryDeleteEffect(model, "DrillSpin");
+				al::tryEmitEffect(isMarioModel, "DrillSpin", nullptr);
+				if (--drillSensorRemaining == 0) al::tryDeleteEffect(isMarioModel, "DrillSpin");
 			}
 
 			// Left the pop-out arc early: the countdown never reached zero, so delete here too
@@ -196,7 +196,7 @@ namespace PlayerDrill {
 				&& !al::isNerve(thisPtr, getNerveAt(nrvHakoniwaJump))
 				&& !al::isNerve(thisPtr, getNerveAt(nrvHakoniwaFall))) {
 				drillSensorRemaining = 0;
-				al::tryDeleteEffect(model, "DrillSpin");
+				al::tryDeleteEffect(isMarioModel, "DrillSpin");
 			}
 		}
 	}

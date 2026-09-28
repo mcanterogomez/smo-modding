@@ -8,7 +8,7 @@ namespace PlayerFireBall {
 
 	inline const al::Nerve* shotNerve = nullptr; // the state the shot rides, handed forward by locomotion; a mismatch means something took the body
 
-	inline void spawnProjectile(PlayerActorHakoniwa* thisPtr, al::LiveActor* model, al::LiveActorGroup* pool, bool isBlast) {
+	inline void spawnProjectile(PlayerActorHakoniwa* thisPtr, al::LiveActorGroup* pool, bool isBlast) {
 		auto* projectile = pool->getDeadActor();
 		if (!projectile || !al::isDead(projectile)) return; // pool may have emptied since the trigger
 
@@ -16,27 +16,27 @@ namespace PlayerFireBall {
 		if (auto* target = findNearestTarget(thisPtr, isBlast ? 1600.0f : 800.0f)) {
 			sead::Vector3f dir = al::getTrans(target) - al::getTrans(thisPtr);
 			dir.normalize();
-			sead::Vector3f fwd; al::calcQuatFront(&fwd, model);
-			if (fwd.dot(dir) > 0.85f) al::faceToDirection(model, dir);
+			sead::Vector3f fwd; al::calcQuatFront(&fwd, isMarioModel);
+			if (fwd.dot(dir) > 0.85f) al::faceToDirection(isMarioModel, dir);
 		}
 
 		hitBufferCount = 0;
 		sead::Vector3f startPos;
-		al::calcJointPos(&startPos, model, (!isBlast && nextThrowLeft) ? "HandL" : "HandR");
+		al::calcJointPos(&startPos, isMarioModel, (!isBlast && nextThrowLeft) ? "HandL" : "HandR");
 
 		if (isBlast) {
-			sead::Vector3f fwd; al::calcQuatFront(&fwd, model); fwd.normalize();
+			sead::Vector3f fwd; al::calcQuatFront(&fwd, isMarioModel); fwd.normalize();
 			((TankBullet*)projectile)->shoot(startPos, fwd * 85.0f, 200, false, false);
-			al::tryEmitEffect(model, "Shoot", nullptr);
+			al::tryEmitEffect(isMarioModel, "Shoot", nullptr);
 			al::tryStartSe(projectile, "Shoot");
 		} else {
-			((FireBrosFireBall*)projectile)->shoot(startPos, al::getQuat(model), sead::Vector3f::zero, true, 0, isSuper);
+			((FireBrosFireBall*)projectile)->shoot(startPos, al::getQuat(isMarioModel), sead::Vector3f::zero, true, 0, isSuper);
 			al::tryStartSe(projectile, isIce ? "IceBallShoot" : "FireBallShoot");
 			nextThrowLeft = !nextThrowLeft;
 		}
 	}
 
-	inline void update(PlayerActorHakoniwa* thisPtr, al::LiveActor* model) {
+	inline void update(PlayerActorHakoniwa* thisPtr) {
 		// Idle and nothing can start: skip the work below
 		if (fireStep == Idle && (!(isMario || isFire || isIce || isBrawl || isSuper) || !al::isPadTriggerR(-1))) { canAction = false; return; }
 
@@ -55,7 +55,7 @@ namespace PlayerFireBall {
 
 			// Not shooting. Start the shot and hand off the frame, so the forced nerve resolves before anything reads it
 			case Idle: {
-				if (!wasAction && !al::isEqualSubString(al::getActionName(model), "GlideFloat")) return;
+				if (!wasAction && !al::isEqualSubString(al::getActionName(isMarioModel), "GlideFloat")) return;
 				auto* projectile = pool->getDeadActor();
 				if (!projectile || !al::isDead(projectile)) return;
 
@@ -71,7 +71,7 @@ namespace PlayerFireBall {
 			// Shot playing. Any nerve switch took the body, except Jump/Run
 			case Shooting: {
 				if (shotFrame == 0) shotNerve = thisPtr->getNerveKeeper()->getCurrentNerve();
-				if (shotFrame == (isBlast ? 39 : 2)) spawnProjectile(thisPtr, model, pool, isBlast);
+				if (shotFrame == (isBlast ? 39 : 2)) spawnProjectile(thisPtr, pool, isBlast);
 				if (!isIdle) tryEndSubAnim(anim); // no longer standing, upper body carries the rest
 
 				bool canShoot = al::isNerve(thisPtr, shotNerve)

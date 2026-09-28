@@ -71,7 +71,6 @@ namespace PlayerCore {
             Orig(thisPtr);
 
             auto* anim = thisPtr->mAnimator;
-            auto* model = thisPtr->mModelHolder->findModelActor("Normal");
             bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
             bool isMove = thisPtr->mInput->isMove();
 
@@ -230,7 +229,7 @@ namespace PlayerCore {
             updateAttackSensor(thisPtr, "HipDropKnockDown", isHipDropAnim(anim), wasAttackMove);
 
             // Change face animations
-            al::LiveActor* face = al::tryGetSubActor(model, "顔");
+            al::LiveActor* face = al::tryGetSubActor(isMarioModel, "顔");
             if (face) {
                 bool isWater = !thisPtr->mWaterSurfaceFinder->isFoundSurface() && al::isInWater(thisPtr);
                 const char* actionName = al::getActionName(face);
@@ -238,7 +237,7 @@ namespace PlayerCore {
                 if (isWater && (!al::isEqualSubString(actionName, "Swim") || al::isEqualSubString(actionName, "Spin")))
                     al::startAction(face, "SwimStand");
 
-                bool tauntSmash = al::isActionPlaying(model, "TauntSmash") || al::isActionPlaying(model, "TauntSmash01");
+                bool tauntSmash = al::isActionPlaying(isMarioModel, "TauntSmash") || al::isActionPlaying(isMarioModel, "TauntSmash01");
 
                 // Metal and the battle stance fight, Brawl and Super glare the rest of the time
                 const char* faceAnim = nullptr;
@@ -285,7 +284,7 @@ namespace PlayerCore {
 
                 // Already immune - the hit never lands
                 if (isMetal || isSuper || isHipDropAnim(anim)) return false;
-                if (source && al::isEqualString(al::getSensorHost(source)->getName(), "MarioTankBullet")) return false;
+                if (source && tankBullets && tankBullets->isExistActor(al::getSensorHost(source))) return false;
 
                 float frame = anim->getAnimFrame();
                 if ((al::isEqualSubString(anim->mCurAnim, "Punch")  && frame <= 6.0f)
@@ -298,7 +297,7 @@ namespace PlayerCore {
 
                     al::setNerve(thisPtr, &GuardNrv);
                     al::setVelocityBlowAttackAndTurnToTarget(thisPtr, al::getTrans(attacker), 5.0f, 5.0f); // push Mario
-                    if (al::isExistAction(attacker, "BlowDown")) al::setVelocityBlowAttack(attacker, al::getTrans(thisPtr), 10.0f, 10.0f); // push attacker
+                    if (al::isExistAction(attacker, "BlowDown") && isMobile(attacker)) al::setVelocityBlowAttack(attacker, al::getTrans(thisPtr), 10.0f, 10.0f); // push attacker
                     return false;
                 }
             }

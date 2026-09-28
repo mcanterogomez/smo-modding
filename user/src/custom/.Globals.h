@@ -182,6 +182,13 @@ inline bool isAnyType(const al::LiveActor* actor, Names... names) {
 	return matched && !excluded;
 }
 
+// Free-moving enemies have a movement anim; rooted ones (Packun, chained Wanwan) don't
+inline bool isMobile(const al::LiveActor* actor) {
+	for (const char* anim : {"Walk", "Fall", "Move", "Swim", "Run", "Jump", "Fly"}) // most common first, so most enemies exit on the first check
+		if (al::isExistAction(actor, anim)) return true;
+	return false;
+}
+
 // Check if has sensor type(s), each checked independently across all sensors
 template<typename... Fns>
 inline bool hasSensor(const al::LiveActor* actor, Fns... checks) {
@@ -261,7 +268,7 @@ inline bool isSneaking = false;
 // =========================================================
 
 inline PlayerActorHakoniwa* isHakoniwa = nullptr;
-inline al::LiveActor* isMarioModel = nullptr; // the player's 3D model, only compared against, so a stale one between stages is harmless
+inline al::LiveActor* isMarioModel = nullptr; // the player's 3D model ("Normal"), set with isHakoniwa in initPlayer
 inline HammerBrosHammer* isHammer = nullptr;
 inline HammerBrosHammer* isSmashHammer = nullptr;
 inline CustomGauge* isGauge = nullptr;

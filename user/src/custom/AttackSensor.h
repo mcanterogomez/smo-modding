@@ -50,7 +50,7 @@ namespace AttackSensor {
                 && (isBaseSpinAnim(thisPtr->mAnimator)
                     || isJumpPunchAnim(thisPtr->mAnimator)
                     || isDrillAnim(thisPtr->mAnimator) // Allow drill attacks
-                    || al::isActionPlaying(thisPtr->mModelHolder->findModelActor("Normal"), "MoveSuper")
+                    || al::isActionPlaying(isMarioModel, "MoveSuper")
                     || al::isEqualString(thisPtr->mAnimator->mCurAnim, "JumpBroad8") || al::isEqualString(thisPtr->mAnimator->mCurAnim, "Glide"));
 
             bool isDoubleSpinAttack = isDoubleSensor
@@ -213,10 +213,10 @@ namespace AttackSensor {
             if (!thisPtr || !source || !target) return;
 
             al::LiveActor* targetHost = al::getSensorHost(target);
-            bool isAttackSensor = al::isSensorName(source, "AttackHack") && al::isEqualString(thisPtr->getName(), "MarioIceBall");
+            bool isAttackSensor = al::isSensorName(source, "AttackHack") && iceBalls && iceBalls->isExistActor(thisPtr);
 
             if (!isAttackSensor || isInHitBuffer(targetHost)) { Orig(thisPtr, source, target); return; }
-            if (!isValidAttackTarget(target) || al::isEqualString(targetHost->getName(), "MarioIceBall")) return;
+            if (!isValidAttackTarget(target) || (iceBalls && iceBalls->isExistActor(targetHost))) return;
 
             sead::Vector3f sourcePos = al::getSensorPos(source);
 
@@ -255,9 +255,9 @@ namespace AttackSensor {
             auto* source = reinterpret_cast<al::HitSensor*>(ctx->X[20]);
             auto* target = reinterpret_cast<al::HitSensor*>(ctx->X[21]);
 
-            // Enemy fireballs share this class, so rule them out by name before the heavier checks
-            if (ctx->W[0] || (!al::isEqualString(fireball->getName(), "MarioFireBall")
-                && !al::isEqualString(fireball->getName(), "MarioIceBall"))) return;
+            // Enemy fireballs share this class, so rule them out by pool before the heavier checks
+            if (ctx->W[0] || (!(fireBalls && fireBalls->isExistActor(fireball))
+                && !(iceBalls && iceBalls->isExistActor(fireball)))) return;
 
             al::LiveActor* targetHost = al::getSensorHost(target);
             if (!isValidAttackTarget(target) || isType(targetHost, "KoopaCap", "KoopaCap")) return;
@@ -280,8 +280,8 @@ namespace AttackSensor {
             auto* source = reinterpret_cast<al::HitSensor*>(ctx->X[22]);
             auto* target = reinterpret_cast<al::HitSensor*>(ctx->X[21]);
 
-            // Enemy tank bullets share this class, so rule them out by name before the heavier checks
-            if (!al::isEqualString(bullet->getName(), "MarioTankBullet")) return;
+            // Enemy tank bullets share this class, so rule them out by pool before the heavier checks
+            if (!tankBullets || !tankBullets->isExistActor(bullet)) return;
 
             al::LiveActor* targetHost = al::getSensorHost(target);
             if (!isValidAttackTarget(target) || isType(targetHost, "KoopaCap", "KoopaCap")) return;

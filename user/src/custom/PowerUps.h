@@ -8,6 +8,7 @@
 #include "headers/PlayerIceCube.h"
 #include "custom/PlayerWeapon.h"
 #include "Library/Action/ActorActionKeeper.h"
+#include "Library/Joint/JointSpringController.h"
 
 // Shared core of both water surface run judges
 template <typename Judge>
@@ -489,6 +490,25 @@ namespace PowerUps {
 		}
 	};
 
+	// The game only springs Cape1/Cape2, so the cape's lower joints get one each (past 25 degrees the cape creases)
+	struct CapeChainSprings : public mallow::hook::Trampoline<CapeChainSprings> {
+		static al::JointSpringController* Callback(const al::LiveActor* actor, const char* joint) {
+			auto* ctrl = Orig(actor, joint);
+			if (!al::isEqualString(joint, "Cape2") || !al::isEqualString(actor->getName(), "ケープ")) return ctrl;
+
+			for (const char* link : {"Cape3", "CapeL3", "CapeR3"}) {
+				if (!al::isExistJoint(actor, link)) continue;
+				auto* spring = Orig(actor, link);
+				if (!spring) continue;
+				spring->setChildLocalPos({80.0f, 0.0f, 0.0f});
+				spring->setStability(0.08f);
+				spring->setFriction(0.8f);
+				spring->setLimitDegree(25.0f);
+			}
+			return ctrl;
+		}
+	};
+
 	// Super dives faster
 	struct PlayerConstGetHeadSlidingSpeed : public mallow::hook::Trampoline<PlayerConstGetHeadSlidingSpeed> {
 		static float Callback(const PlayerConst* thisPtr) {
@@ -636,6 +656,11 @@ namespace PowerUps {
 		PlayerActorHakoniwaExeHeadSliding::InstallAtSymbol("_ZN19PlayerActorHakoniwa14exeHeadSlidingEv");
 		PlayerHeadSlidingKill::InstallAtSymbol("_ZN22PlayerStateHeadSliding4killEv");
 		PlayerConstGetHeadSlidingSpeed::InstallAtSymbol("_ZNK11PlayerConst19getHeadSlidingSpeedEv");
+
+		// Handles Cape chain springs, the cape's joint keeper grows from 3 to 6 to hold them
+		CapeChainSprings::InstallAtSymbol("_ZN2al25initJointSpringControllerEPKNS_9LiveActorEPKc");
+		exl::patch::CodePatcher capeKeeperPatcher(0x456108);
+		capeKeeperPatcher.WriteInst(0x528000C1); // MOV W1, #6
 
 		PlayerInputFunctionIsTriggerJump::InstallAtSymbol("_ZN19PlayerInputFunction13isTriggerJumpEPKN2al9LiveActorEi");
 

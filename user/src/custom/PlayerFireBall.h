@@ -42,7 +42,7 @@ namespace PlayerFireBall {
 
 		auto* anim = thisPtr->mAnimator;
 
-		bool isBlast = PlayerWeapon::isShooting(); // only a weapon that shoots, an axe or a wrench throws the normal shot
+		bool isBlast = PlayerWeapon::isArmed(); // only the held weapon shoots, an axe or a wrench throws the normal shot
 		al::LiveActorGroup* pool = isBlast ? tankBullets : (isIce ? iceBalls : fireBalls);
 		bool isIdle = !thisPtr->mInput->isMove() && rs::isOnGround(thisPtr, thisPtr->mCollider); // the shot owns the whole body only here
 		bool wasAction = canAction; // read half of the latch: the clear below runs on every path

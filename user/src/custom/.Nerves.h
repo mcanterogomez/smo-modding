@@ -432,7 +432,7 @@ public:
         }
 
         // Scale fade in/out, only the ground swing ends so the air spin stays full size
-        if (al::isAlive(isHammer)) PlayerWeapon::setFade(isHammer, false, anim, al::getNerveStep(player), "HammerAttack");
+        if (al::isAlive(isHammer)) PlayerWeapon::setFade(isHammer, anim, al::getNerveStep(player), "HammerAttack");
 
         // The belt hammer stands in while the big one is out
         PlayerWeapon::showCarry(isMarioModel, "Hammer", al::isDead(isHammer));

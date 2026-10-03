@@ -401,12 +401,15 @@ inline al::LiveActor* findNearestTarget(const al::LiveActor* player, f32 maxDist
 	return nearest;
 }
 
-// Any enemy the Eye sensor sees; a defeated one switches its body sensor off, and our fireballs are enemy actors too
+// Any enemy the Eye sensor sees that can hurt Mario; rocks and the dog have a body sensor but no attack one
 inline bool isEnemyNear(const al::LiveActor* player) {
 	al::HitSensor* eye = al::getHitSensor(player, "Eye");
 	for (int i = 0; eye && i < eye->mSensorCount; i++) {
 		al::HitSensor* s = eye->mSensors[i];
-		if (s->mIsValid && al::isSensorEnemyBody(s) && !isAnyType(al::getSensorHost(s), "FireBall")) return true;
+		if (!s->mIsValid || !al::isSensorEnemyBody(s) || isAnyType(al::getSensorHost(s), "FireBall")) continue; // a defeated one switches its body sensor off
+		al::HitSensorKeeper* keeper = al::getSensorHost(s)->getHitSensorKeeper();
+		for (int j = 0; j < keeper->getSensorNum(); j++)
+			if (al::isSensorEnemyAttack(keeper->getSensor(j))) return true;
 	}
 	return false;
 }

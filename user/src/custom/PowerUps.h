@@ -692,9 +692,9 @@ namespace PowerUps {
 		// Handles Super Mario breathing in water
 		ReduceOxygen::InstallAtSymbol("_ZN12PlayerOxygen6reduceEv");
 
-		// Patch PlayerJointControlKeeper capacity from 7 to 12
+		// Patch PlayerJointControlKeeper capacity from 7 to 16
 		exl::patch::CodePatcher jointCapPatcher(0x454F20);
-		jointCapPatcher.WriteInst(0x52800181); // MOV W1, #12
+		jointCapPatcher.WriteInst(0x52800201); // MOV W1, #16
 
 		// Disable invincibility music patches
 		exl::patch::CodePatcher invincibleStartPatcher(0x4CC6FC);

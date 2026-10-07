@@ -5,6 +5,7 @@
 #include "custom/CustomAnimation.h"
 #include "custom/PowerUps.h"
 #include "custom/PlayerFreeze.h"
+#include "custom/PlayerRetarget.h"
 
 inline bool detectIsMario(const char* costume, const char* cap) {
     return (costume && al::isEqualString(costume, "Mario"))
@@ -56,6 +57,9 @@ namespace PlayerCore {
 
                 PowerUps::executeInitPlayer(thisPtr, actorInfo, playerInfo);
             #endif
+
+            // A character's gloves play Mario's animations converted to their own bones
+            PlayerRetarget::executeInitPlayer(isMarioModel);
         }
     };
 
@@ -349,5 +353,7 @@ namespace PlayerCore {
         // Handles effects
         EmitEmittersHook::InstallAtSymbol("_ZN2al6Effect15tryEmitEmittersEPKN4sead7Vector3IfEEb");
         EffectHitReactionLimitHook::InstallAtOffset(0xA5B938);
+        // Converted animations for a baked character's body
+        PlayerRetarget::Install();
     }
 }

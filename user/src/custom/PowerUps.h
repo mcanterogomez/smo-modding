@@ -9,6 +9,7 @@
 #include "custom/PlayerWeapon.h"
 #include "Library/Action/ActorActionKeeper.h"
 #include "Library/Joint/JointSpringController.h"
+#include "Layout/ShopLayoutInfo.h"
 
 // Shared core of both water surface run judges
 template <typename Judge>
@@ -636,10 +637,54 @@ namespace PowerUps {
 	using TouchDamageFireCode = TouchCodeHook<const al::LiveActor*, const IUsePlayerCollision*, const IPlayerModelChanger*>;
 	using TouchDeadCode = TouchCodeHook<const al::LiveActor*, const IUsePlayerCollision*, const IPlayerModelChanger*, const IUseDimension*, float>;
 
+	// A suit counts only if its files are installed (MarioInvisible has none by design)
+	inline bool isCostumeInstalled(const char* name, bool isCap) {
+		return al::isEqualString(name, "MarioInvisible") || al::isExistFile(al::StringTmp<128>("ObjectData/%s%s.szs", name, isCap ? "Cap" : ""));
+	}
+
+	inline ShopItem::ItemInfo& itemInfo(ShopItem::ItemInfo& item) { return item; }
+	inline ShopItem::ItemInfo& itemInfo(ShopItem::ShopItemInfo& item) { return item.info; }
+
+	// Drops outfits and caps that aren't installed, then renumbers what's left
+	template <typename T>
+	inline void eraseMissingCostumes(sead::PtrArray<T>& list) {
+		for (s32 i = list.size() - 1; i >= 0; i--) {
+			auto& info = itemInfo(*list.unsafeAt(i));
+			bool isCap = info.type == ShopItem::ItemType::Cap;
+			if ((isCap || info.type == ShopItem::ItemType::Cloth) && !isCostumeInstalled(info.name, isCap)) list.erase(i);
+		}
+		for (s32 i = 0; i < list.size(); i++) itemInfo(*list.unsafeAt(i)).index = i;
+	}
+
+	// The shop, outfit and cap lists are read once at boot
+	struct GameDataHolderInit : public mallow::hook::Trampoline<GameDataHolderInit> {
+		static void Callback(GameDataHolder* thisPtr, const al::MessageSystem* messageSystem) {
+			Orig(thisPtr, messageSystem);
+			eraseMissingCostumes(thisPtr->mShopItemList);
+			eraseMissingCostumes(thisPtr->mItemCloth);
+			eraseMissingCostumes(thisPtr->mItemCap);
+		}
+	};
+
+	// A save wearing a suit that isn't installed wears Mario's instead
+	template <bool isCap>
+	struct CurrentCostumeName : public mallow::hook::Trampoline<CurrentCostumeName<isCap>> {
+		using Base = mallow::hook::Trampoline<CurrentCostumeName<isCap>>;
+		static const char* Callback(GameDataHolderAccessor accessor) {
+			const char* name = Base::Orig(accessor);
+			return name && !isCostumeInstalled(name, isCap) ? "Mario" : name;
+		}
+	};
+
 	inline void Install() {
 		// Custom archives
 		FireBrosFireBallInitArchive::InstallAtOffset(0x10082C);
 		InitActorArchiveHook::InstallAtSymbol("_ZN2al24initActorWithArchiveNameEPNS_9LiveActorERKNS_13ActorInitInfoERKN4sead14SafeStringBaseIcEEPKc");
+
+		// Suits without their files are skipped
+		GameDataHolderInit::InstallAtSymbol("_ZN14GameDataHolderC2EPKN2al13MessageSystemE");
+		CurrentCostumeName<false>::InstallAtSymbol("_ZN16GameDataFunction25getCurrentCostumeTypeNameE22GameDataHolderAccessor");
+		CurrentCostumeName<true>::InstallAtSymbol("_ZN16GameDataFunction21getCurrentCapTypeNameE22GameDataHolderAccessor");
 
 		// Handles control/movement
 		LiveActorMovementHook::InstallAtSymbol("_ZN2al9LiveActor8movementEv");

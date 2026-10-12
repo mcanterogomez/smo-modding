@@ -2,6 +2,7 @@
 #include "ModConfig.h"
 #include "custom/.Globals.h"
 #include "custom/PlayerWeapon.h"
+#include "custom/PlayerRetarget.h"
 
 class PlayerSpinCapAttack;
 
@@ -65,6 +66,8 @@ namespace CustomAnimation {
 
 		if (PlayerWeapon::isArmed() && is("Wait")) return "BlastWait"; // a swapped weapon is gone by the time Wait starts
 
+		if (PlayerRetarget::isPort()) return isStance ? name : nullptr; // a character port keeps the stance and blaster wait, never a suit's anims
+
 		if (isFly) {
 			if (is("GlideFloat")) return "GlideFloatSuper";
 			if (is("Wait")) return "WaitSuper";
@@ -124,9 +127,23 @@ namespace CustomAnimation {
 
 	inline int idlePlayed = 0; // anims played this idle, reset when the nerve re-enters
 
+	// A character port's own idles in its clips, counted once per body
+	inline char ownIdle[16] = ""; // the one being started ("WaitCycle00", "WaitCycle01"...)
+	inline int ownIdleCount() {
+		static char body[64] = "";
+		static int count = 0;
+		if (!PlayerRetarget::isPort()) return 0; // only character ports ship WaitCycle clips
+		if (!al::isEqualString(al::getModelName(isMarioModel), body)) {
+			al::copyString(body, al::getModelName(isMarioModel), sizeof(body));
+			for (count = 0; al::isSklAnimExist(isMarioModel, al::StringTmp<16>("WaitCycle%02d", count).cstr()); count++) {}
+		}
+		return count;
+	}
+
 	// Idle-cycle anim for the current suit, or nullptr when spent — add new suits here
 	inline const char* idleCycleAnim(bool alt, const PlayerAnimator* anim = nullptr) {
 		if (!isPlayerAnim(anim) || areaWaitAnim(isHakoniwa)) return nullptr; // in an area wait the engine owns the idle, leave it alone
+		if (int n = ownIdleCount()) { al::copyString(ownIdle, al::StringTmp<16>("WaitCycle%02d", (idlePlayed + n - 1) % n).cstr(), sizeof(ownIdle)); return ownIdle; } // a character port's own idles, in turn for good: the game's relax never starts
 		if (!remapAnim("Wait", anim) && idlePlayed > 2) return nullptr; // Wait is untouched, so vanilla relax exists: each anim once, then one held wait before handing over
 
 		if (isMario && isDefinitve()) return alt ? "AreaWaitView" : "AreaWaitStretch";

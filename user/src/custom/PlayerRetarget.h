@@ -18,16 +18,17 @@
 #include <algorithm>
 #include <cstring>
 
-// A character on Mario's skeleton: body clips converted at build time (PlayerAnimation<body>), gloves converted live from Mario's rest values in bone user data ("MarioTrans", "MarioRot")
+// A character on Mario's skeleton: its body, glove and face clips converted at build time (PlayerAnimation<body>, PlayerAnimationHandL<body>...)
 namespace PlayerRetarget {
 
 	using Mtx = sead::Matrix34f;
 	using Vec = sead::Vector3f;
-	constexpr s32 maxJoints = 32;
 	static_assert(sizeof(nn::g3d::ResBone) == 0x60);
 
-	// g3d SkeletonObj: +0x10 ResBone array, +0x18 local array (stride 0x60, scale at +0x10), +0x20 world array (stride 0x40, four xyz_ columns), +0x50 bone count
+	// g3d SkeletonObj: +0x10 ResBone array, +0x20 world array (stride 0x40, four xyz_ columns)
 	inline u8* getSkeleton(const al::LiveActor* model) { return (u8*)model->getModelKeeper()->getModelCtrl()->getModelObj()->GetSkeleton(); }
+	inline const nn::g3d::ResBone* resBones(u8* skel) { return *(const nn::g3d::ResBone**)(skel + 0x10); }
+	inline s32 parentOf(const nn::g3d::ResBone& bone) { return bone.GetParentIndex() == nn::g3d::ResBone::InvalidBoneIndex ? -1 : bone.GetParentIndex(); }
 
 	inline Vec rotated(const Mtx& m, const Vec& v) { Vec r; r.setRotated(m, v); return r; }
 	inline Vec perpendicular(const Vec& v, const Vec& unit) { return v - unit * v.dot(unit); }
@@ -60,35 +61,15 @@ namespace PlayerRetarget {
 		return out;
 	}
 
-	class RetargetController : public al::JointControllerBase {
+	// The game's joint controllers, named for its debug lists
+	class Controller : public al::JointControllerBase {
 	public:
-		RetargetController(al::LiveActor* model, s32 count) : al::JointControllerBase(count), mModel(model) {}
-
-		// Inside the game's skeleton pass, joint by joint: Mario's turn of this joint under its parent, put on the part's own rest pose and bone length
-		void calcJointCallback(s32 id, sead::Matrix34f* mtx) override {
-			s32 p = mParent[id];
-			if (p < 0) return;
-			u8* skel = getSkeleton(mModel);
-			Mtx parent = worldAt(skel, p), inv, rel, a, b;
-			inv.setInverse(parent);
-			rel.setMul(inv, *mtx);
-			const f32* s = scaleOf(skel, p);   // the parent's scale moves its children (Maya scale), so the length difference grows with it
-			rel.setTranslation(rel.getTranslation() + Vec(mOffset[id].x * s[0], mOffset[id].y * s[1], mOffset[id].z * s[2]));
-			a.setMul(parent, mTurnInv[p]); b.setMul(a, rel); mtx->setMul(b, mTurn[id]);
-		}
-
-		const char* getCtrlTypeName() const override { return "PlayerRetarget"; }
+		Controller(s32 count, const char* name) : al::JointControllerBase(count), mName(name) {}
+		const char* getCtrlTypeName() const override { return mName; }
 		// The lib header's (u32) signature isn't what the game exports, so these stay local instead of importing missing symbols
 		bool tryValidateConstraints(u32) override { return false; }
 		bool tryInvalidateConstraints(u32) override { return false; }
-
-		al::LiveActor* mModel;
-		s32 mParent[maxJoints];
-		Vec mOffset[maxJoints]; // the part's bone translation minus Mario's, in Mario's frame of the parent
-		Mtx mTurn[maxJoints], mTurnInv[maxJoints]; // each joint's own rest frame seen from Mario's rest frame (rotation only)
-
-	private:
-		static const f32* scaleOf(u8* skel, s32 id) { return (const f32*)(*(u8**)(skel + 0x18) + id * 0x60 + 0x10); }
+		const char* mName;
 	};
 
 	// Controllers come from a fixed free list per keeper and a full one crashes on register; a part without a keeper gets its own
@@ -96,59 +77,6 @@ namespace PlayerRetarget {
 		if (!al::isExistJointControllerKeeper(model)) { al::initJointControllerKeeper(model, 1); return true; }
 		u8* keeper = *(u8**)((u8*)model->getModelKeeper()->getModelCtrl() + 0x3C0);
 		return keeper && *(void**)(keeper + 0x18); // free list head
-	}
-
-	// Float array the build tools stored on the bone under this name
-	inline const f32* getUserFloats(const nn::g3d::ResBone& bone, const char* name, s32* count) {
-		for (s32 i = 0; i < bone.GetUserDataCount(); i++) {
-			const auto* data = bone.GetUserData(i);
-			if (!al::isEqualString(data->GetName(), name)) continue;
-			*count = data->GetCount();
-			return data->GetFloat();
-		}
-		*count = 0;
-		return nullptr;
-	}
-
-	inline void tryRetarget(al::LiveActor* model) {
-		u8* skel = getSkeleton(model);
-		s32 count = *(u16*)(skel + 0x50);
-		const auto* bones = *(const nn::g3d::ResBone**)(skel + 0x10);
-		if (count > maxJoints) return;
-		bool hasMario = false;
-		for (s32 i = 0; i < count && !hasMario; i++) { s32 n; getUserFloats(bones[i], "MarioTrans", &n); hasMario = n == 3; }
-		if (!hasMario) return;
-		s32 parent[maxJoints];
-		Vec offset[maxJoints];
-		Mtx own[maxJoints], mario[maxJoints], turn[maxJoints]; // rest poses (the part's own, Mario's) and each joint's own rest frame seen from Mario's
-		for (s32 i = 0; i < count; i++) {
-			const auto& t = bones[i].GetTranslate();
-			const auto& r = bones[i].GetRotateEuler();
-			Vec body(t.x, t.y, t.z), rot(r.x, r.y, r.z), marioRest = body, marioRot = rot;
-			s32 n;
-			if (const f32* f = getUserFloats(bones[i], "MarioTrans", &n); n == 3) marioRest.set(f[0], f[1], f[2]);
-			if (const f32* f = getUserFloats(bones[i], "MarioRot", &n); n == 3) marioRot.set(f[0], f[1], f[2]);
-			s32 p = parent[i] = bones[i].GetParentIndex() == nn::g3d::ResBone::InvalidBoneIndex ? -1 : bones[i].GetParentIndex();
-			Mtx lo, lm, inv;
-			lo.makeRT(rot, body); lm.makeRT(marioRot, marioRest);
-			if (p >= 0) { own[i].setMul(own[p], lo); mario[i].setMul(mario[p], lm); }
-			else { own[i] = lo; mario[i] = lm; }
-			inv.setInverse(mario[i]);
-			turn[i].setMul(inv, own[i]);
-			turn[i].setTranslation(Vec::zero);
-			offset[i] = (p >= 0 ? rotated(turn[p], body) : body) - marioRest;   // the length difference, measured in Mario's frame of the parent
-		}
-		if (!tryReserveControllerSlot(model)) return;
-
-		auto* ctrl = new RetargetController(model, count);
-		for (s32 i = 0; i < count; i++) {
-			ctrl->mParent[i] = parent[i];
-			ctrl->mOffset[i] = offset[i];
-			ctrl->mTurn[i] = turn[i];
-			ctrl->mTurnInv[i].setInverse(turn[i]);
-			ctrl->appendJointId(i);
-		}
-		al::registerJointController(model, ctrl);
 	}
 
 	// Springs listed by the character's build (quills, nose): one game JointSpringController per entry of InitJointSpringCtrl in the model's archive
@@ -165,7 +93,7 @@ namespace PlayerRetarget {
 
 	// Scooter and kart mix their L/C/R clips by steering, and a mix of converted arms leaves the fists off the handles: each arm reaches its fist to Mario's spot mixed the same way
 	namespace RideGrip {
-		constexpr s32 vehicleCount = 2, familyCount = 5, maxBones = 64;
+		constexpr s32 vehicleCount = 2, familyCount = 5;
 		inline const char* sVehicles[vehicleCount] = {"Motorcycle", "Kart"};
 		inline const char* sFamilies[familyCount] = {"Ride", "RideClash", "RideJump", "RideLand", "RideRunStart"};
 		inline const char* sSides[3] = {"L", "C", "R"}; // the game's weight order
@@ -178,9 +106,9 @@ namespace PlayerRetarget {
 		}
 	}
 
-	class RideGripController : public al::JointControllerBase {
+	class RideGripController : public Controller {
 	public:
-		RideGripController(al::LiveActor* model) : al::JointControllerBase(2), mModel(model) {}
+		RideGripController(al::LiveActor* model) : Controller(2, "PlayerRideGrip"), mModel(model) {}
 
 		// Inside the skeleton pass, at the hand (its arm already placed): the mixed spot, reached by the two arm bones with the elbow kept on its side; the hand keeps its turn
 		void calcJointCallback(s32 id, sead::Matrix34f* mtx) override {
@@ -257,13 +185,11 @@ namespace PlayerRetarget {
 			return v * RideGrip::familyCount + family;
 		}
 
-		const char* getCtrlTypeName() const override { return "PlayerRideGrip"; }
-		bool tryValidateConstraints(u32) override { return false; }
-		bool tryInvalidateConstraints(u32) override { return false; }
-
 		al::LiveActor* mModel;
 		s32 mHand[2], mArm1[2], mArm2[2];
-		s32 mUpper[2][RideGrip::maxBones], mLower[2][RideGrip::maxBones], mUpperCount[2] = {}, mLowerCount[2] = {}; // joints turned with the upper arm, and with the forearm (computed before the hand)
+		s32* mUpper[2] = {}; // joints turned with the upper arm, and with the forearm (computed before the hand)
+		s32* mLower[2] = {};
+		s32 mUpperCount[2] = {}, mLowerCount[2] = {};
 		s32 mMove = -1;
 		bool mIsUpdated = false;
 		f32 mInfluence = 0.0f, mBlend = 1.0f;
@@ -276,9 +202,7 @@ namespace PlayerRetarget {
 	inline void tryInitRideGrip(al::LiveActor* model) {
 		if (model != isMarioModel || !al::isExistModelResourceYaml(model, "RideGrip", nullptr)) return;
 		u8* skel = getSkeleton(model);
-		s32 count = *(u16*)(skel + 0x50);
-		const auto* bones = *(const nn::g3d::ResBone**)(skel + 0x10);
-		if (count > RideGrip::maxBones) return;
+		const auto* bones = resBones(skel);
 		s32 arm1[2], arm2[2], hand[2];
 		for (s32 s = 0; s < 2; s++) {
 			const char* side = s ? "R" : "L";
@@ -289,9 +213,10 @@ namespace PlayerRetarget {
 		}
 		if (!tryReserveControllerSlot(model)) return;
 		auto* ctrl = new RideGripController(model);
-		auto isUnder = [&](s32 j, s32 root) { for (s32 k = j; k >= 0; k = bones[k].GetParentIndex() == nn::g3d::ResBone::InvalidBoneIndex ? -1 : bones[k].GetParentIndex()) if (k == root) return true; return false; };
+		auto isUnder = [&](s32 j, s32 root) { for (s32 k = j; k >= 0; k = parentOf(bones[k])) if (k == root) return true; return false; };
 		for (s32 s = 0; s < 2; s++) {
 			ctrl->mArm1[s] = arm1[s]; ctrl->mArm2[s] = arm2[s]; ctrl->mHand[s] = hand[s];
+			ctrl->mUpper[s] = new s32[hand[s]]; ctrl->mLower[s] = new s32[hand[s]]; // only joints before the hand are listed
 			for (s32 j = 0; j < ctrl->mHand[s]; j++) {
 				if (isUnder(j, ctrl->mArm2[s])) ctrl->mLower[s][ctrl->mLowerCount[s]++] = j;
 				else if (isUnder(j, ctrl->mArm1[s])) ctrl->mUpper[s][ctrl->mUpperCount[s]++] = j;
@@ -314,16 +239,106 @@ namespace PlayerRetarget {
 		al::registerJointController(model, ctrl);
 	}
 
-	// The body and each of its parts decide from their own bones; parts sharing a model with one already done (the silhouette) are skipped
+	// A face on its own bones (FaceBones.byml in the face's archive): its clips only switch Face00..08 on, so each frame the face bones ease to that face's pose and the lids shut as the eye part blinks
+	class FaceController : public Controller {
+	public:
+		static constexpr const char* sFaces[9] = {"Face00", "Face01", "Face02", "Face03", "Face04", "Face05", "Face06", "Face07", "Face08"};
+		static constexpr const char* sShut[2] = {"EyelidCloseLeft", "EyelidCloseRight"};
+		static constexpr const char* sHalf[2] = {"EyelidLeft", "EyelidRight"};
+		struct Pose { Vec t; sead::Quatf q; f32 s; };
+		FaceController(al::LiveActor* face, al::LiveActor* eye) : Controller(1, "PlayerFaceBones"), mFace(face), mEye(eye) {}
+
+		// At the last face bone, every face bone set on Face00: a face change eases over mEase frames, a blink eases the lids shut over 3 (half lid: halfway)
+		void calcJointCallback(s32 id, sead::Matrix34f* mtx) override {
+			s32 want = mCur;
+			for (s32 f = 0; f < 9; f++) if (al::isJointVisibility(mFace, sFaces[f])) { want = f; break; }
+			if (want != mCur) { std::copy(mShown, mShown + mCount, mFrom); mCur = want; mStep = 0.0f; }
+			if (mStep < 1.0f) {
+				mStep = std::min(mStep + 1.0f / mEase, 1.0f);
+				for (s32 k = 0; k < mCount; k++) mShown[k] = mix(mFrom[k], mPoses[mCur * mCount + k], smooth(mStep));
+			}
+			for (s32 s = 0; s < 2 && mEye; s++) {
+				f32 shut = al::isJointVisibility(mEye, sShut[s]) ? 1.0f : al::isJointVisibility(mEye, sHalf[s]) ? 0.5f : 0.0f;
+				mBlink[s] += std::clamp(shut - mBlink[s], -0.34f, 0.34f);
+			}
+			u8* skel = getSkeleton(mFace);
+			Mtx root = worldAt(skel, mRoot), local, world;
+			for (s32 k = 0; k < mCount; k++) {
+				s32 s = mSide[k];
+				f32 lid = s < 0 ? 0.0f : smooth(mBlink[s]);
+				Pose p = lid > 0.0f ? mix(mShown[k], mPoses[9 * mCount + k], lid) : mShown[k];
+				local.fromQuat(p.q);
+				local.scaleBases(p.s, p.s, p.s);
+				local.setTranslation(p.t);
+				world.setMul(root, local);
+				if (mJoint[k] == id) *mtx = world;
+				else setWorldAt(skel, mJoint[k], world);
+			}
+		}
+
+		static Pose mix(const Pose& a, const Pose& b, f32 x) { Pose o; o.t = a.t + (b.t - a.t) * x; o.q.slerpTo(a.q, b.q, x); o.s = a.s + (b.s - a.s) * x; return o; }
+
+		al::LiveActor* mFace;
+		al::LiveActor* mEye;
+		s32 mRoot = 0, mCount = 0, mCur = 0;
+		s32* mJoint = nullptr;
+		s8* mSide = nullptr; // the eye a lid blinks with (0 left, 1 right, -1 not a lid)
+		f32 mEase = 6.0f, mStep = 1.0f, mBlink[2] = {};
+		Pose* mPoses = nullptr; // faces 0..8 then the blink, each face bone under Face00
+		Pose* mShown = nullptr;
+		Pose* mFrom = nullptr;
+	};
+
+	inline void tryInitFaceBones(al::LiveActor* face, al::LiveActor* eye) {
+		al::ByamlIter root(al::getModelResourceYaml(face, "FaceBones", nullptr)), bones, poses, row;
+		bool isValid = root.tryGetIterByKey(&bones, "Bones") && root.tryGetIterByKey(&poses, "Poses") && bones.getSize() > 0 && poses.getSize() == 10 && al::getJointIndex(face, "Face00") >= 0;
+		for (s32 k = 0; isValid && k < bones.getSize(); k++) { const char* name = ""; isValid = bones.tryGetStringByIndex(&name, k) && al::getJointIndex(face, name) >= 0; } // a missing bone would be written outside the skeleton
+		if (!isValid || !tryReserveControllerSlot(face)) { logLine("FaceBones: not set up"); return; }
+		auto* c = new FaceController(face, eye);
+		c->mRoot = al::getJointIndex(face, "Face00");
+		c->mCount = bones.getSize();
+		root.tryGetFloatByKey(&c->mEase, "Ease");
+		c->mPoses = new FaceController::Pose[10 * c->mCount];
+		c->mJoint = new s32[c->mCount];
+		c->mSide = new s8[c->mCount];
+		c->mShown = new FaceController::Pose[c->mCount];
+		c->mFrom = new FaceController::Pose[c->mCount];
+		s32 last = c->mRoot;
+		for (s32 k = 0; k < c->mCount; k++) {
+			const char* name = "";
+			bones.tryGetStringByIndex(&name, k);
+			c->mJoint[k] = al::getJointIndex(face, name);
+			c->mSide[k] = al::isStartWithString(name, "eyeLid") ? al::isEndWithString(name, "_r") : -1;
+			last = std::max(last, c->mJoint[k]);
+		}
+		for (s32 f = 0; f < 10; f++) {
+			poses.tryGetIterByIndex(&row, f);
+			s32 n = row.getSize() == c->mCount * 8 ? 8 : 7; // tx ty tz qx qy qz qw, then an even scale when a face scales a bone
+			for (s32 k = 0; k < c->mCount; k++) {
+				f32 v[8] = {0, 0, 0, 0, 0, 0, 1, 1};
+				for (s32 j = 0; j < n; j++) row.tryGetFloatByIndex(&v[j], k * n + j);
+				c->mPoses[f * c->mCount + k] = {Vec(v[0], v[1], v[2]), sead::Quatf(v[6], v[3], v[4], v[5]), v[7]};
+			}
+		}
+		std::copy(c->mPoses, c->mPoses + c->mCount, c->mShown);
+		c->appendJointId(last);
+		al::registerJointController(face, c);
+	}
+
+	// The body's springs and ride grip; a face part on its own bones blinks with the eye part (parts sharing the body's model, the silhouette, are skipped)
 	inline void executeInitPlayer(al::LiveActor* model) {
 		if (!model || !model->getModelKeeper()) return;
-		tryRetarget(model);
 		tryInitSprings(model);
 		tryInitRideGrip(model);
+		al::LiveActor* face = nullptr;
+		al::LiveActor* eye = nullptr;
 		for (s32 i = 0; i < al::getSubActorNum(model); i++) {
 			al::LiveActor* part = al::getSubActor(model, i);
-			if (part && part->getModelKeeper() && part->getModelKeeper() != model->getModelKeeper()) tryRetarget(part);
+			if (!part || !part->getModelKeeper() || part->getModelKeeper() == model->getModelKeeper()) continue;
+			if (al::isExistModelResourceYaml(part, "FaceBones", nullptr)) face = part;
+			else if (al::getJointIndex(part, FaceController::sShut[0]) >= 0) eye = part;
 		}
+		if (face) tryInitFaceBones(face, eye);
 	}
 
 	// A character's body ships its converted clips as PlayerAnimation<body> (PlayerAnimationSonic); each body's answer is remembered (several suits can be on)
@@ -339,14 +354,17 @@ namespace PlayerRetarget {
 		return a.has;
 	}
 
-	// Unlisted files load into the world's memory, freed only on a world change, so each character worn there piled up: its clips get one slot there, emptied for the next, its model files go with the costumes'
+	// A worn character's files (model, parts, clips) load into one slot, emptied for the next character, so nothing of a character stays loaded once it's taken off
 	namespace ClipSlot {
 		constexpr const char* category = "PlayerRetargetClips";
-		constexpr const char* costumeCategory = "プレイヤーモデル"; // the game's costume memory ("PlayerModel", 200 MB, never emptied; every costume in the game fills 145 MB of it)
-		constexpr u32 size = 40 * 1024 * 1024; // the largest clips (Crash) take 39.05 MB loaded; suits.py refuses clips over 39 MB unpacked
-		constexpr u32 margin = 1024 * 1024; // what a load takes beyond the unpacked size (30 KB measured)
-		inline const char* sPartSuffixes[] = {"", "Face", "Eye", "HandL", "HandR", "HandTexture", "Head", "HeadTexture", "Cap", "2D"};
-		inline sead::Heap* sHeap = nullptr; // made once a world, the first time a character's clips load in it
+		constexpr u32 margin = 128 * 1024; // what each load takes beyond its unpacked size (30 KB measured)
+		inline const char* sPartSuffixes[] = {"", "Face", "Eye", "HandL", "HandR", "HandTexture", "Head", "HeadTexture", "Cap", "2D"}; // its model files ("Sonic", "SonicFace"...)
+		inline const char* sClipParts[] = {"", "HandL", "HandR", "Face"}; // its clips ("PlayerAnimationSonic", "PlayerAnimationHandLSonic"...)
+		constexpr s32 files = sizeof(sPartSuffixes) / sizeof(*sPartSuffixes) + sizeof(sClipParts) / sizeof(*sClipParts); // the resources the slot's category must hold: one per file it can take
+		inline u32 sSize = 0; // the slot's size, fit for the biggest character in the costume list
+		inline sead::Heap* sHeap = nullptr; // made the first time a character is worn: in the costume memory (kept for good, reused by every character) or else the world's
+		inline sead::Heap* sParent = nullptr; // the heap it came from
+		inline bool sInCostumes = false;
 		inline char sPath[128] = ""; // the clips in it, as the game names them ("ObjectData/PlayerAnimationSonic")
 		inline s32 sStage = 0, sUsedStage = -1; // stages started, and the last one a body used its clips in
 
@@ -360,17 +378,58 @@ namespace PlayerRetarget {
 			return head[4] << 24 | head[5] << 16 | head[6] << 8 | head[7];
 		}
 
+		// The slot's files: the worn body's clips and model files; an "as Mario" mod replaces Mario for good, so only its body clips
+		inline bool isSlotFile(const char* name) {
+			if (!sPath[0] || !al::isStartWithString(name, "ObjectData/")) return false;
+			name += 11;
+			const char* body = sPath + 26; // after "ObjectData/PlayerAnimation"
+			if (al::isEqualString(body, "Mario")) return al::isEqualString(name, sPath + 11);
+			if (al::isStartWithString(name, "PlayerAnimation")) for (const char* part : sClipParts) if (al::isStartWithString(name + 15, part) && al::isEqualString(name + 15 + std::strlen(part), body)) return true;
+			if (al::isStartWithString(name, body)) for (const char* part : sPartSuffixes) if (al::isEqualString(name + std::strlen(body), part)) return true;
+			return false;
+		}
+
+		// What the slot's files unpack to (0 if the body ships no clips)
+		inline u32 setSize(const char* body) {
+			u32 need = getUnpackedSize(al::StringTmp<128>("ObjectData/PlayerAnimation%s", body).cstr());
+			if (!need || al::isEqualString(body, "Mario")) return need;
+			for (const char* part : sClipParts) if (part[0]) need += getUnpackedSize(al::StringTmp<128>("ObjectData/PlayerAnimation%s%s", part, body).cstr());
+			for (const char* part : sPartSuffixes) need += getUnpackedSize(al::StringTmp<128>("ObjectData/%s%s", body, part).cstr());
+			return need;
+		}
+
+		// The biggest set among the costumes the closet can dress in (SystemData/ItemList), so the one slot fits whichever character is worn later
+		inline u32 boxSize(const char* worn) {
+			u32 most = setSize(worn);
+			if (const u8* list = al::tryGetBymlFromArcName("SystemData/ItemList", "ItemCloth")) {
+				al::ByamlIter clothes(list), item;
+				for (s32 i = 0; i < clothes.getSize(); i++) {
+					const char* name = nullptr;
+					if (clothes.tryGetIterByIndex(&item, i) && item.tryGetStringByKey(&name, "ItemName") && hasOwnClips(name)) most = std::max(most, setSize(name));
+				}
+			}
+			return most + margin * files;
+		}
+
+		inline void logHeaps(const char* when) {
+			const sead::Heap* world = al::getWorldResourceHeap();
+			const sead::Heap* costumes = al::tryFindNamedHeap("PlayerModel");
+			logLine("Heaps %s: world free %zu largest %zu | costumes free %zu largest %zu | slot %s", when, world ? world->getFreeSize() : 0, world ? world->getMaxAllocatableSize(8) : 0, costumes ? costumes->getFreeSize() : 0, costumes ? costumes->getMaxAllocatableSize(8) : 0, sPath[0] ? sPath : "empty");
+		}
+
 		inline void empty() {
 			if (!sPath[0]) return;
 			logLine("ClipSlot: emptied of %s", sPath);
 			al::removeResourceCategory(category);
 			sHeap->freeAll();
-			al::addResourceCategory(category, 4, sHeap);
+			al::addResourceCategory(category, files, sHeap);
 			sPath[0] = '\0';
 		}
 
+		// A world change: a slot in the world's memory goes with it; one in the costume memory is only emptied
 		inline void destroy() {
 			if (!sHeap) return;
+			if (sInCostumes) { empty(); return; }
 			al::removeResourceCategory(category);
 			sHeap->destroy();
 			sHeap = nullptr;
@@ -382,46 +441,35 @@ namespace PlayerRetarget {
 			al::StringTmp<128> path("ObjectData/%s", archive);
 			if (sPath[0] && al::isEqualString(sPath, path.cstr())) { sUsedStage = sStage; return; }
 			if ((sPath[0] && sUsedStage == sStage) || al::findResource(path.cstr())) { logLine("ClipSlot: %s stays in the world (slot busy or already loaded)", path.cstr()); return; }
-			u32 need = getUnpackedSize(path.cstr());
-			if (!need || need + margin > size) { logLine("ClipSlot: %s stays in the world (unpacks to %u)", path.cstr(), need); return; }
+			u32 need = setSize(archive + 15);
+			if (!need) { logLine("ClipSlot: %s stays in the world (unreadable)", path.cstr()); return; }
+			sead::Heap* costumes = al::tryFindNamedHeap("PlayerModel");
+			if (sHeap && sInCostumes && costumes != sParent) { al::removeResourceCategory(category); sHeap = nullptr; sPath[0] = '\0'; } // the costume memory was made again: the old slot went with it
 			if (!sHeap) {
-				sead::Heap* world = al::getWorldResourceHeap();
 				const auto& categories = alProjectInterface::getSystemKit()->getResourceSystem()->mCategories;
-				size_t room = world ? world->getMaxAllocatableSize(8) : 0; // the largest block: a failed allocation halts the game
-				if (room >= size && categories.size() < categories.capacity() && (sHeap = sead::ExpHeap::create(size, category, world))) al::addResourceCategory(category, 4, sHeap);
-				logLine("ClipSlot: %s (world room %zu)", sHeap ? "made" : "no room, clips stay in the world", room);
+				// the costume memory first (characters' closet copies are Mario's, so it keeps room the world doesn't); the largest block, as a failed allocation halts the game
+				sSize = boxSize(archive + 15);
+				sInCostumes = costumes && costumes->getMaxAllocatableSize(8) >= sSize;
+				sParent = sInCostumes ? costumes : al::getWorldResourceHeap();
+				size_t room = sParent ? sParent->getMaxAllocatableSize(8) : 0;
+				if (room >= sSize && categories.size() < categories.capacity() && (sHeap = sead::ExpHeap::create(sSize, category, sParent, 8))) al::addResourceCategory(category, files, sHeap);
+				logLine("ClipSlot: %s, %u (%s room %zu)", sHeap ? "made" : "no room, clips stay in the world", sSize, sInCostumes ? "costume" : "world", room);
 				if (!sHeap) return;
 			}
+			if (need + margin * files > sSize) { logLine("ClipSlot: %s stays in the world (its files unpack to %u, the slot takes %u)", path.cstr(), need, sSize); return; }
 			empty();
 			al::copyString(sPath, path.cstr(), sizeof(sPath));
 			sUsedStage = sStage;
 			logLine("ClipSlot: %s takes the slot", path.cstr());
 		}
 
-		// A character's own model files: its body, parts, cap, 2D and closet clips ("Sonic", "SonicFace", "PlayerAnimationSonicCloset")
-		inline bool isCharacterFile(const char* path) {
-			if (!al::isStartWithString(path, "ObjectData/")) return false;
-			path += 11;
-			for (const auto& a : sClipAnswers) {
-				if (!a.has || al::isEqualString(a.body, "Mario")) continue; // Mario's (the "as Mario" mods) are in the game's table already
-				s32 n = std::strlen(a.body);
-				if (al::isStartWithString(path, "PlayerAnimation") && al::isStartWithString(path + 15, a.body) && al::isEqualString(path + 15 + n, "Closet")) return true;
-				if (al::isStartWithString(path, a.body)) for (const char* s : sPartSuffixes) if (al::isEqualString(path + n, s)) return true;
-			}
-			return false;
-		}
-
-		// The game's table first; the slot's clips go to the slot, a character's model files to the costume memory, anything else to the current category
+		// The game's table first; the worn character's files go to the slot, anything else to the current category (nothing of a character loads unless it's worn)
 		struct CategoryHook : public mallow::hook::Trampoline<CategoryHook> {
 			static const char* Callback(const al::ResourceSystem* system, const sead::SafeString& name) {
-				if (sPath[0] && al::isEqualString(name.cstr(), sPath)) return category;
-				if (const char* listed = Orig(system, name)) return listed;
-				if (!isCharacterFile(name.cstr())) return nullptr;
-				const sead::Heap* costumes = al::tryFindNamedHeap("PlayerModel");
-				u32 need = getUnpackedSize(name.cstr());
-				if (costumes && need && costumes->getMaxAllocatableSize(8) >= need + margin) return costumeCategory;
-				logLine("ClipSlot: %s stays in the world (costume memory full or file unreadable)", name.cstr());
-				return nullptr;
+				if (isSlotFile(name.cstr())) { logLine("ClipSlot: %s (%u) into the slot, %zu free", name.cstr(), getUnpackedSize(name.cstr()), sHeap ? sHeap->getFreeSize() : 0); return category; }
+				const char* listed = Orig(system, name);
+				if (u32 big = getUnpackedSize(name.cstr()); big >= 4 * 1024 * 1024) logLine("ClipSlot: %s (%u) -> %s", name.cstr(), big, listed ? listed : "current");
+				return listed;
 			}
 		};
 
@@ -429,15 +477,18 @@ namespace PlayerRetarget {
 		struct StageHook : public mallow::hook::Trampoline<StageHook> {
 			static void Callback(void* scene, const void* info) {
 				sStage++;
+				logHeaps("before stage");
 				Orig(scene, info);
 				if (sUsedStage != sStage) empty();
 				else logLine("ClipSlot: %s, %zu bytes spare", sPath, sHeap->getFreeSize());
+				logHeaps("after stage");
 			}
 		};
 
-		// The slot lives in the world's memory, so it goes first
+		// A world change: the slot is emptied first (destroyed if it came from the world's memory)
 		struct WorldHook : public mallow::hook::Trampoline<WorldHook> {
 			static void Callback(bool removeCategory) {
+				logLine("ClipSlot: world memory destroyed (%d)", removeCategory);
 				destroy();
 				Orig(removeCategory);
 			}
@@ -453,27 +504,37 @@ namespace PlayerRetarget {
 		return sHas;
 	}
 
-	// A body's controller list is sized when it is made and a full one crashes on register: a body with springs or ride grips gets room for them (only character bodies ship those)
+	// The player's body is a character port (it ships its own clips)
+	inline bool isPort() { return isMarioModel && hasOwnClips(isMarioModel); }
+
+	// Controllers a model adds to the game's own: its springs, ride grips and face bones (only characters ship those)
+	inline s32 extraControllerCount(const al::LiveActor* actor) {
+		return getSpringCount(actor) + al::isExistModelResourceYaml(actor, "RideGrip", nullptr) + al::isExistModelResourceYaml(actor, "FaceBones", nullptr);
+	}
+
+	// A body's controller list is sized when it is made and a full one crashes on register, so it gets room for the ones it adds
 	struct KeeperSizeHook : public mallow::hook::Trampoline<KeeperSizeHook> {
 		static void Callback(const al::LiveActor* actor, s32 count) {
-			if (actor) count += getSpringCount(actor) + (al::isExistModelResourceYaml(actor, "RideGrip", nullptr) ? 1 : 0);
+			if (actor) count += extraControllerCount(actor);
 			Orig(actor, count);
 		}
 	};
 
-	// Every body (the player's, cutscene and closet copies, all set up here) with its own converted clips loads them instead of Mario's; the name outlives the setup
-	// Closet copies only play Wait, from the body's small closet file (Mario's for every costume), so they fit the closet's memory
+	// Every body (the player's, cutscene and closet copies, all set up here) with its own clips loads them instead of Mario's
+	// Closet copies (Mario) play Mario's Wait kept in the worn character's file (ClosetWait), already loaded; an "as Mario" body has its own closet file
 	inline bool isClosetBody = false;
+	inline const char* sClosetWorn = nullptr;
 	inline char sBodyAnimation[96] = "";
 	struct BodyAnimationArchiveHook : public mallow::hook::Inline<BodyAnimationArchiveHook> {
 		static void Callback(exl::hook::InlineCtx* ctx) {
 			const char* model = (const char*)ctx->X[28];
 			bool isOwn = hasOwnClips(model);
-			if (!isOwn && !isClosetBody) return;
-			al::StringTmp<96> archive(isClosetBody ? (isOwn ? "PlayerAnimation%sCloset" : "PlayerAnimationCloset") : "PlayerAnimation%s", model);
-			if (isClosetBody && !al::isExistFile(al::StringTmp<128>("ObjectData/%s.szs", archive.cstr()))) return;
+			const char* body = isOwn ? model : isClosetBody && hasOwnClips(sClosetWorn) ? sClosetWorn : nullptr;
+			if (!body) return;
+			al::StringTmp<96> archive(isClosetBody && isOwn ? "PlayerAnimation%sCloset" : "PlayerAnimation%s", body);
+			if (isClosetBody && isOwn && !al::isExistFile(al::StringTmp<128>("ObjectData/%s.szs", archive.cstr()))) return;
 			al::copyString(sBodyAnimation, archive.cstr(), sizeof(sBodyAnimation));
-			if (!isClosetBody) ClipSlot::claim(sBodyAnimation);
+			if (!isClosetBody || !isOwn) ClipSlot::claim(sBodyAnimation); // closet copies load before the player: whichever comes first puts the clips in the slot
 			ctx->X[24] = (u64)sBodyAnimation;
 		}
 	};
@@ -501,7 +562,7 @@ namespace PlayerRetarget {
 		}
 	};
 
-	// Cutscene copies of the body: their parts (gloves) get the same live retarget as the player's
+	// Cutscene copies of the body: the same springs and face as the player's
 	struct DemoBodyHook : public mallow::hook::Trampoline<DemoBodyHook> {
 		static void* Callback(void** parts, al::LiveActor* body, const void* info, const char* bodyName, const char* capName, const void* pConst, void* noseScale, void* earScale, bool isCloset) {
 			void* costume = Orig(parts, body, info, bodyName, capName, pConst, noseScale, earScale, isCloset);
@@ -514,10 +575,25 @@ namespace PlayerRetarget {
 	struct ClosetBodyHook : public mallow::hook::Trampoline<ClosetBodyHook> {
 		static void* Callback(void** parts, al::LiveActor* body, const void* info, const char* bodyName, const char* capName, const void* pConst, void* noseScale, void* earScale, void** follow, void* followMtx) {
 			isClosetBody = true;
+			const auto* holder = ((const al::ActorInitInfo*)info)->actorSceneInfo.sceneObjHolder;
+			sClosetWorn = holder ? GameDataFunction::getCurrentCostumeTypeName(GameDataHolderAccessor(holder)) : nullptr; // from the scene: the copy isn't set up yet
+			// a character's closet copy is Mario's: the closet makes one per costume at once, and every character's model at once doesn't fit
+			if (hasOwnClips(bodyName) && !al::isEqualString(bodyName, "Mario")) { bodyName = "Mario"; capName = "Mario"; }
 			void* costume = Orig(parts, body, info, bodyName, capName, pConst, noseScale, earScale, follow, followMtx);
 			isClosetBody = false;
 			executeInitPlayer(body);
 			return costume;
+		}
+	};
+
+	// The closet starts Wait on its Mario copies (and their parts); one playing from a character's file switches its body to Mario's own Wait kept there
+	struct ClosetActionHook : public mallow::hook::Trampoline<ClosetActionHook> {
+		static void Callback(void* state, al::LiveActor* body, const char* action) {
+			Orig(state, body, action);
+			if (!al::isEqualString(action, "Wait") || !al::isExistAction(body, "ClosetWait")) return;
+			f32 frame = al::getActionFrame(body);
+			al::startAction(body, "ClosetWait");
+			al::setActionFrame(body, frame);
 		}
 	};
 
@@ -565,5 +641,6 @@ namespace PlayerRetarget {
 		FootPrintArchiveHook::InstallAtSymbol("_ZN2al15FootPrintHolderC2EPNS_9LiveActorEPKcPNS_9HitSensorEPNS_15FootPrintServerE");
 		DemoBodyHook::InstallAtSymbol("_ZN14PlayerFunction23initMarioModelActorDemoEPP31PlayerJointControlPartsDynamicsPN2al9LiveActorERKNS3_13ActorInitInfoEPKcSA_PK11PlayerConstPN4sead7Vector3IfEESH_b");
 		ClosetBodyHook::InstallAtSymbol("_ZN14PlayerFunction25initMarioModelActorClosetEPP31PlayerJointControlPartsDynamicsPN2al9LiveActorERKNS3_13ActorInitInfoEPKcSA_PK11PlayerConstPN4sead7Vector3IfEESH_PP30PlayerJointControlFollowMtxPtrPNSE_8Matrix34IfEE");
+		ClosetActionHook::InstallAtSymbol("_ZN21StageSceneStateCloset16startActionMarioEPN2al9LiveActorEPKc");
 	}
 }

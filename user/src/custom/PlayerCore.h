@@ -6,6 +6,7 @@
 #include "custom/PowerUps.h"
 #include "custom/PlayerFreeze.h"
 #include "custom/PlayerRetarget.h"
+#include "custom/PlayerSpinAttack.h"
 
 inline bool detectIsMario(const char* costume, const char* cap) {
     return (costume && al::isEqualString(costume, "Mario"))
@@ -27,6 +28,9 @@ namespace PlayerCore {
             // Set Hakoniwa pointer
             isHakoniwa = thisPtr;
             isMarioModel = thisPtr->mModelHolder->findModelActor("Normal");
+            #ifndef ALLOW_CAPPY_ONLY
+                cleanupSpinAttackState(thisPtr); // clears a spin left over from the last stage
+            #endif
 
             #ifdef ALLOW_POWERUPS
                 // Check for Super suit costume and cap
@@ -86,8 +90,7 @@ namespace PlayerCore {
             CustomAnimation::update(thisPtr);
 
             // Toggle configs, not during captures, i-frames or cutscenes
-            bool isFlicker = thisPtr->mDamageKeeper && thisPtr->mDamageKeeper->mDamageInvalidCount > 0;
-            if (al::isPadHoldL(-1) && al::isPadHoldPressLeftStick(-1) && !isHacking() && !isFlicker && !rs::isActiveDemo(thisPtr)
+            if (al::isPadHoldL(-1) && al::isPadHoldPressLeftStick(-1) && isPlayerActive(thisPtr)
             ) {
                 bool changed = false;
 
@@ -128,10 +131,11 @@ namespace PlayerCore {
 
             // Handle sensor invalidation after timer expires
             if (attackSensorRemaining > 0) {
-                attackSensorRemaining--;
+                updateWindup(thisPtr); // ground, air and water attacks hit once their windup is over
+                attackSensorRemaining -= anim->mAnimFrameCtrl->mRate;
 
                 bool animEnded = anim->isAnimEnd();
-                if (attackSensorRemaining == 0 || animEnded
+                if (attackSensorRemaining <= 0 || animEnded
                 ) {
                     for (auto* sensor : attackSensors) if (sensor) sensor->invalidate();
                     spin.isGalaxy = false;
@@ -290,10 +294,7 @@ namespace PlayerCore {
                 if (isMetal || isSuper || isHipDropAnim(anim)) return false;
                 if (source && tankBullets && tankBullets->isExistActor(al::getSensorHost(source))) return false;
 
-                float frame = anim->getAnimFrame();
-                if ((al::isEqualSubString(anim->mCurAnim, "Punch")  && frame <= 6.0f)
-                    || (al::isEqualSubString(anim->mCurAnim, "JumpPunch") && frame <= 17.0f)
-                    || (isSwingAnim(anim) && frame <= 4.0f)) return false;
+                if (isWindup(anim) && !anim->isAnim("RabbitGet")) return false; // no damage until the attack's hitbox turns on, pulling isn't an attack
 
                 // Parry - only on a hit that would otherwise land
                 if (source && guardWindow > 0 && thisPtr->mDamageKeeper->mDamageInvalidCount <= 0) {

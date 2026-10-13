@@ -18,7 +18,7 @@ inline bool isHitImpact(const al::LiveActor* targetHost, const al::HitSensor* ta
 namespace AttackSensor {
 
     struct HackCapAttackSensorHook : public mallow::hook::Trampoline<HackCapAttackSensorHook> {
-        static void Callback(PlayerActorHakoniwa* thisPtr, al::HitSensor* source, al::HitSensor* target) {
+        static void Callback(HackCap* thisPtr, al::HitSensor* source, al::HitSensor* target) {
             if (!thisPtr || !source || !target) return;
             if (!isValidAttackTarget(target)) return;
 
@@ -46,31 +46,17 @@ namespace AttackSensor {
 
             setupHitEffect(source, target);
 
-            bool isSpinAttack = isGalaxySensor
-                && (isBaseSpinAnim(thisPtr->mAnimator)
-                    || isJumpPunchAnim(thisPtr->mAnimator)
-                    || isDrillAnim(thisPtr->mAnimator) // Allow drill attacks
-                    || al::isActionPlaying(isMarioModel, "MoveSuper")
-                    || al::isEqualString(thisPtr->mAnimator->mCurAnim, "JumpBroad8") || al::isEqualString(thisPtr->mAnimator->mCurAnim, "Glide"));
-
-            bool isDoubleSpinAttack = isDoubleSensor
-                && isDoubleSpinAnim(thisPtr->mAnimator);
-
-            bool isSpinFallback = spin.isGalaxy
-                && (isGalaxySensor || isDoubleSensor);
-
-            bool isPunchAttack = isPunchSensor
-                && isPunchAnim(thisPtr->mAnimator);
-
+            // The game keeps this hitbox on, so it only attacks during a hip drop
             bool isHipDrop = isHipDropSensor
                 && isHipDropAnim(thisPtr->mAnimator);
 
             bool isHipDropAttack = isHipDrop && !rs::isEnableSendTrampleMsg(thisPtr, al::getHitSensor(thisPtr, "Foot"), target);
 
-            if (isSpinAttack || isDoubleSpinAttack || isPunchAttack
-                || isHipDropAttack || isSpinFallback
+            // Moves turn their own hitbox on and off, so an on hitbox is an attack
+            if (isGalaxySensor || isDoubleSensor || isPunchSensor
+                || isHipDropAttack
             ) {
-                if (!isPunchAttack) {
+                if (!isPunchSensor) {
                     if (isAnyType(targetHost, "BlockQuestion", "BlockBrick", "BossForestBlock")) {
                         if (!hitBufferCount) hitBuffer[hitBufferCount++] = nullptr; // Prevent wall bounce, keep hittable, and one slot is enough
                         rs::sendMsgHammerBrosHammerHackAttack(target, source);
@@ -102,6 +88,7 @@ namespace AttackSensor {
                         isHitEffect(thisPtr, targetHost);
                         isNearCollectible = false;
                         isNearTarget = nullptr;
+                        al::invalidateHitSensor(thisPtr, "Punch"); // one pull per press
                     }
                     return;
                 }

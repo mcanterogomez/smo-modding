@@ -50,6 +50,7 @@
 
 // Game-specific utilities
 #include "Project/HitSensor/HitSensor.h"
+#include "Util/ActorDimensionUtil.h"
 #include "Util/DemoUtil.h"
 #include "Util/ObjUtil.h"
 #include "Util/PlayerCollisionUtil.h"
@@ -63,6 +64,7 @@
 #include "Player/PlayerActionGroundMoveControl.h"
 #include "Player/PlayerActorHakoniwa.h"
 #include "Player/PlayerBindKeeper.h"
+#include "Player/PlayerCarryKeeper.h"
 #include "Player/PlayerColliderHakoniwa.h"
 #include "Player/PlayerCounterForceRun.h"
 #include "Player/PlayerDamageKeeper.h"
@@ -97,22 +99,10 @@
 #include "math/seadVectorFwd.h"
 
 // Namespaces
-namespace rs {
-	bool is2D(const IUseDimension*);
-	bool isEnableSendTrampleMsg(const al::LiveActor* player, al::HitSensor* source, al::HitSensor* target);
-	al::HitSensor* tryGetCollidedWallSensor(IUsePlayerCollision const* collider);
-	al::HitSensor* tryGetCollidedGroundSensor(IUsePlayerCollision const* collider);
-}
-
 namespace PlayerEquipmentFunction {
 	bool isEquipmentNoCapThrow(const PlayerEquipmentUser*);
 	bool isEquipmentForceDash(const PlayerEquipmentUser*);
 }
-
-class PlayerCarryKeeper {
-public:
-	bool isCarry() const;
-};
 
 using mallow::log::logLine;
 
@@ -144,82 +134,18 @@ inline void isGalaxySfx(PlayerActorHakoniwa* player) {
 }
 
 // =========================================================
-//                     TYPE CHECKS
-// =========================================================
-
-// Skeletal anim table of an actor's model, cached per actor so stale pointers compare but never deref
-template <typename T>
-inline const al::AnimInfoTable* getAnimTable(const T* actor) {
-	static const T* owner = nullptr;
-	static const al::AnimInfoTable* table = nullptr;
-
-	if (actor == owner) return table;	// stale pointers only ever compare, never deref
-	owner = actor;
-	table = nullptr;
-	if (!actor) return nullptr;
-
-	const al::LiveActor* model = actor;
-	if constexpr (requires { actor->mModelHolder; }) model = actor->mModelHolder->findModelActor("Normal");
-
-	if (auto* skl = model->getModelKeeper()->getAnimSkl()) table = skl->getAnimInfoTable();
-	return table;
-}
-
-template<typename... Models>
-inline bool isType(const al::LiveActor* actor, const char* name, Models... models) {
-	if (!al::isEqualSubString(typeid(*actor).name(), name)) return false;
-	if constexpr (sizeof...(models) == 0) return true;
-	bool matched = false, excluded = false;
-	((models[0] == '!' ? excluded |= al::isModelName(actor, models + 1) : matched |= al::isModelName(actor, models)), ...);
-	return matched && !excluded;
-}
-
-template<typename... Names>
-inline bool isAnyType(const al::LiveActor* actor, Names... names) {
-	const char* type = typeid(*actor).name();
-	bool matched = false, excluded = false;
-	((names[0] == '!' ? excluded |= al::isEqualSubString(type, names + 1) : matched |= al::isEqualSubString(type, names)), ...);
-	return matched && !excluded;
-}
-
-// Free-moving enemies have a movement anim; rooted ones (Packun, chained Wanwan) don't
-inline bool isMobile(const al::LiveActor* actor) {
-	for (const char* anim : {"Walk", "Fall", "Move", "Swim", "Run", "Jump", "Fly"}) // most common first, so most enemies exit on the first check
-		if (al::isExistAction(actor, anim)) return true;
-	return false;
-}
-
-// Check if has sensor type(s), each checked independently across all sensors
-template<typename... Fns>
-inline bool hasSensor(const al::LiveActor* actor, Fns... checks) {
-	al::HitSensorKeeper* keeper = actor->getHitSensorKeeper();
-	auto any = [&](auto check) {
-		for (s32 i = 0; keeper && i < keeper->getSensorNum(); i++)
-			if (check(keeper->getSensor(i))) return true;
-		return false;
-	};
-	return (any(checks) && ...);
-}
-
-// =========================================================
 //                    NERVE OFFSETS
 // =========================================================
 
 const uintptr_t spinCapNrvOffset = 0x1D78940;
 const uintptr_t nrvSpinCapFall = 0x1D7ff70;
 
-const uintptr_t nrvHakoniwaBind = 0x1D789E0;
-const uintptr_t nrvHakoniwaEndHack = 0x1D789D8;
 const uintptr_t nrvHakoniwaFall = 0x1D78910;
-const uintptr_t nrvHakoniwaHeadSliding = 0x1D78980;
 const uintptr_t nrvHakoniwaHipDrop = 0x1D78978;
 const uintptr_t nrvHakoniwaJump = 0x1D78948;
-const uintptr_t nrvHakoniwaLongJump = 0x1D78988;
-const uintptr_t nrvHakoniwaPoleClimb = 0x1D78970;
 const uintptr_t nrvHakoniwaRun = 0x1D78928;
 const uintptr_t nrvHakoniwaSquat = 0x1D78920;
 const uintptr_t nrvHakoniwaWait = 0x1D78918;
-const uintptr_t nrvHakoniwaWallAir = 0x1D78958;
 
 // =========================================================
 //                        FLAGS
@@ -292,7 +218,7 @@ inline al::LiveActor* hitBuffer[0x40];
 inline int hitBufferCount = 0;
 
 // Attack counters (-1 = inactive)
-inline int attackSensorRemaining = -1;
+inline float attackSensorRemaining = -1; // anim frames, counts down at the anim's speed
 inline int fireStep = -1;
 inline int drillStep = -1;
 inline int drillSensorRemaining = -1; // hitbox lingers N frames after drill pop
@@ -302,9 +228,15 @@ inline int isDashDelay = -1; // -1 = idle, counts down while R is held and runni
 inline int isMarioActive = 0; // 0 = none, 1 = enabling, -1 = disabling
 inline int battleStance = 0; // frames left in the battle stance, 0 = off
 
+// Hit effect state — set by EmitEffectHook when "Hit" fires on any actor
+inline bool isEffect = false;
+inline sead::Vector3f isSpawnPos;
+
 // Constants
 const f32 MIN_SPEED_RUN_ON_WATER = 15.0f;
 const sead::Color4u8 paintClear(0, 0, 0, 0);
+
+// Pose modifiers
 inline sead::Vector3f glideRot = {0.0f, 0.0f, 0.0f};
 inline sead::Vector3f legScale = {1.0f, 1.0f, 1.0f};
 
@@ -319,12 +251,107 @@ inline sead::Quatf wheelSteerQuat = sead::Quatf::unit;
 inline sead::Vector3f propellerScale = {0.0f, 0.0f, 0.0f};
 
 // =========================================================
-//                       HELPERS
+//                      CUSTOM STATES
 // =========================================================
 
-// Hit effect state — set by EmitEffectHook when "Hit" fires on any actor
-inline bool isEffect = false;
-inline sead::Vector3f isSpawnPos;
+struct SpinState {
+	bool isGalaxy = false;
+	bool canGalaxy = true;
+	bool canStandard = true;
+	bool trigger = false;
+	bool isFakeQueued = false; // fake spin waiting for the Fall nerve to start it, the hit timer ends it
+
+	void resetForNewSpin() {
+		canGalaxy = true;
+		canStandard = true;
+	}
+};
+
+inline SpinState spin;
+
+// Enters the cap spin; trigger false = plain cap throw
+inline void startSpinCap(PlayerActorHakoniwa* player, bool trigger = true) {
+	spin.trigger = trigger;
+	al::setNerve(player, getNerveAt(spinCapNrvOffset));
+}
+
+// The attack playing: its anim, its hitbox and the anim frame the hitbox turns on (0 = right away)
+struct AttackState {
+	const char* anim = nullptr;
+	const char* sensor = nullptr;
+	float hitFrame = 0.0f;
+};
+
+inline AttackState attack;
+
+// Starts an attack in the main and sub anim; frames = anim frames from the start until it ends, -1 = when the anim ends
+inline void startAttack(PlayerActorHakoniwa* player, const char* anim, const char* sensor, float hitFrame, float frames) {
+	auto* animator = player->mAnimator;
+	for (const char* name : {"GalaxySpin", "DoubleSpin", "Punch"}) al::invalidateHitSensor(player, name); // a new attack ends every other hitbox
+	animator->startSubAnim(anim);
+	animator->startAnim(anim);
+	attack = {anim, sensor, hitFrame};
+	hitBufferCount = 0; // a new attack can hit everything again
+	attackSensorRemaining = frames < 0 ? animator->getAnimFrameMax() : frames;
+	if (hitFrame <= 0) al::validateHitSensor(player, sensor); // no windup: hits straight away
+}
+
+// Still winding up: the attack's anim hasn't reached its hit frame yet
+inline bool isWindup(const PlayerAnimator* anim) {
+	return attack.anim && attack.hitFrame > 0 && anim->isAnim(attack.anim) && anim->getAnimFrame() <= attack.hitFrame;
+}
+
+// Turns the attack's hitbox on the frame its anim passes the hit frame (ground, air and water)
+inline void updateWindup(PlayerActorHakoniwa* player) {
+	auto* anim = player->mAnimator;
+	float frame = anim->getAnimFrame();
+	if (!attack.sensor || attack.hitFrame <= 0 || !anim->isAnim(attack.anim) || frame < attack.hitFrame || frame - anim->getAnimFrameRate() >= attack.hitFrame) return;
+	al::validateHitSensor(player, attack.sensor);
+}
+
+// =========================================================
+//                     TYPE CHECKS
+// =========================================================
+
+template<typename... Models>
+inline bool isType(const al::LiveActor* actor, const char* name, Models... models) {
+	if (!al::isEqualSubString(typeid(*actor).name(), name)) return false;
+	if constexpr (sizeof...(models) == 0) return true;
+	bool matched = false, excluded = false;
+	((models[0] == '!' ? excluded |= al::isModelName(actor, models + 1) : matched |= al::isModelName(actor, models)), ...);
+	return matched && !excluded;
+}
+
+template<typename... Names>
+inline bool isAnyType(const al::LiveActor* actor, Names... names) {
+	const char* type = typeid(*actor).name();
+	bool matched = false, excluded = false;
+	((names[0] == '!' ? excluded |= al::isEqualSubString(type, names + 1) : matched |= al::isEqualSubString(type, names)), ...);
+	return matched && !excluded;
+}
+
+// Free-moving enemies have a movement anim; rooted ones (Packun, chained Wanwan) don't
+inline bool isMobile(const al::LiveActor* actor) {
+	for (const char* anim : {"Walk", "Fall", "Move", "Swim", "Run", "Jump", "Fly"}) // most common first, so most enemies exit on the first check
+		if (al::isExistAction(actor, anim)) return true;
+	return false;
+}
+
+// Check if has sensor type(s), each checked independently across all sensors
+template<typename... Fns>
+inline bool hasSensor(const al::LiveActor* actor, Fns... checks) {
+	al::HitSensorKeeper* keeper = actor->getHitSensorKeeper();
+	auto any = [&](auto check) {
+		for (s32 i = 0; keeper && i < keeper->getSensorNum(); i++)
+			if (check(keeper->getSensor(i))) return true;
+		return false;
+	};
+	return (any(checks) && ...);
+}
+
+// =========================================================
+//                       HELPERS
+// =========================================================
 
 inline sead::Vector3f setupHitEffect(const al::HitSensor* a, const al::HitSensor* b) {
 	isEffect = false;
@@ -368,18 +395,6 @@ inline void updateAttackSensor(al::LiveActor* actor, const char* name, bool acti
 	was = active;
 }
 
-// Zero horizontal velocity if no floor geometry ahead
-inline void applyEdgeGuard(al::LiveActor* player) {
-	sead::Vector3f front;
-	al::calcFrontDir(&front, player);
-	sead::Vector3f grav = al::getGravity(player);
-	sead::Vector3f hitPos;
-	if (!alCollisionUtil::getHitPosOnArrow(player, &hitPos, al::getTrans(player) + front * 25.0f - grav * 50.0f, grav * 75.0f, nullptr, nullptr)) {
-		sead::Vector3f* vel = al::getVelocityPtr(player);
-		*vel = grav * vel->dot(grav);
-	}
-}
-
 // Returns the nearest valid target within maxDist, skipping already-hit actors
 inline al::LiveActor* findNearestTarget(const al::LiveActor* player, f32 maxDist) {
 	al::HitSensor* eye = al::getHitSensor(player, "Eye");
@@ -401,12 +416,13 @@ inline al::LiveActor* findNearestTarget(const al::LiveActor* player, f32 maxDist
 	return nearest;
 }
 
-// Any enemy the Eye sensor sees that can hurt Mario; rocks and the dog have a body sensor but no attack one
+// Any enemy the Eye sensor sees that can hurt Mario; rocks have no attack sensor, friendly ones like Shibo also have an Npc one
 inline bool isEnemyNear(const al::LiveActor* player) {
 	al::HitSensor* eye = al::getHitSensor(player, "Eye");
 	for (int i = 0; eye && i < eye->mSensorCount; i++) {
 		al::HitSensor* s = eye->mSensors[i];
-		if (!s->mIsValid || !al::isSensorEnemyBody(s) || isAnyType(al::getSensorHost(s), "FireBall")) continue; // a defeated one switches its body sensor off
+		if (!s->mIsValid || !al::isSensorEnemyBody(s) || isAnyType(al::getSensorHost(s), "FireBall")
+			|| hasSensor(al::getSensorHost(s), al::isSensorNpc)) continue; // a defeated one switches its body sensor off
 		al::HitSensorKeeper* keeper = al::getSensorHost(s)->getHitSensorKeeper();
 		for (int j = 0; j < keeper->getSensorNum(); j++)
 			if (al::isSensorEnemyAttack(keeper->getSensor(j))) return true;
@@ -414,41 +430,27 @@ inline bool isEnemyNear(const al::LiveActor* player) {
 	return false;
 }
 
-// Captured actors keep vanilla behaviour
-inline bool isHacking() { return isHakoniwa && isHakoniwa->mHackKeeper && isHakoniwa->mHackKeeper->mHackActor; }
-
-// Underwater and too deep for the surface to matter
-inline bool isSubmerged(const PlayerActorHakoniwa* player) {
-	auto* wsf = player->mWaterSurfaceFinder;
-	return al::isInWater(player) && !(wsf && wsf->isFoundSurface() && wsf->getDistance() <= 80.0f);
-}
-
-// =========================================================
-//                      CUSTOM STATES
-// =========================================================
-
-enum class isSpin { None, Galaxy, Standard };
-
-struct SpinState {
-	bool isGalaxy = false;
-	bool canGalaxy = true;
-	bool canStandard = true;
-	isSpin queued = isSpin::None; // cross-spin transition set by tryCapSpinAndRethrow
-	bool trigger = false;
-	int fakethrowRemainder = -1; // -1 idle, -2 queued, >0 timer
-
-	void resetForNewSpin() {
-		canGalaxy = true;
-		canStandard = true;
-		queued = isSpin::None;
-	}
-};
-
-inline SpinState spin;
-
 // =========================================================
 //                   ANIMATION CHECKS
 // =========================================================
+
+// Skeletal anim table of an actor's model, cached per actor so stale pointers compare but never deref
+template <typename T>
+inline const al::AnimInfoTable* getAnimTable(const T* actor) {
+	static const T* owner = nullptr;
+	static const al::AnimInfoTable* table = nullptr;
+
+	if (actor == owner) return table;	// stale pointers only ever compare, never deref
+	owner = actor;
+	table = nullptr;
+	if (!actor) return nullptr;
+
+	const al::LiveActor* model = actor;
+	if constexpr (requires { actor->mModelHolder; }) model = actor->mModelHolder->findModelActor("Normal");
+
+	if (auto* skl = model->getModelKeeper()->getAnimSkl()) table = skl->getAnimInfoTable();
+	return table;
+}
 
 // endSubAnim restarts the main anim when nothing is attached, so always gate it
 inline void tryEndSubAnim(PlayerAnimator* anim) {
@@ -528,6 +530,25 @@ inline bool isDrillAnim(const PlayerAnimator* anim) {
 		|| anim->isSubAnim("DrillOutFast");
 }
 
+// =========================================================
+//                     PLAYER CHECKS
+// =========================================================
+
+// Captured actors keep vanilla behaviour
+inline bool isHacking() { return isHakoniwa && isHakoniwa->mHackKeeper && isHakoniwa->mHackKeeper->mHackActor; }
+
+// Not flickering from a hit, captured or in a cutscene
+inline bool isPlayerActive(const PlayerActorHakoniwa* player) {
+	bool isFlicker = player->mDamageKeeper && player->mDamageKeeper->mDamageInvalidCount > 0;
+	return !isFlicker && !isHacking() && !rs::isActiveDemo(player);
+}
+
+// Underwater and too deep for the surface to matter
+inline bool isSubmerged(const PlayerActorHakoniwa* player) {
+	auto* wsf = player->mWaterSurfaceFinder;
+	return al::isInWater(player) && !(wsf && wsf->isFoundSurface() && wsf->getDistance() <= 80.0f);
+}
+
 // Handle Guard state
 inline bool isGuarding() {
 	return isHakoniwa && (isUpperBodyAnim(isHakoniwa->mAnimator, "HitGuard") || isHakoniwa->mAnimator->isAnim("HitGuard"));
@@ -536,10 +557,7 @@ inline bool isGuarding() {
 // Handle active action state
 inline bool isActionBusy() { return isGuarding() || fireStep >= 0 || drillStep >= 0; }
 
-// Any attack or guard in progress, read from our own state since sensors can sit valid between attacks
+// Any attack or guard in progress: the attack's anim is still playing, a shot, a guard or the hammer
 inline bool isAttacking(const PlayerActorHakoniwa* player) {
-	auto* anim = player->mAnimator;
-	return attackSensorRemaining > 0 || fireStep >= 0 || isGuarding()
-		|| isSpinAnim(anim) || isPunchAnim(anim) || isJumpPunchAnim(anim)
-		|| (isHammer && al::isAlive(isHammer));
+	return (attack.anim && player->mAnimator->isAnim(attack.anim)) || fireStep >= 0 || isGuarding() || (isHammer && al::isAlive(isHammer));
 }

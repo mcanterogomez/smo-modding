@@ -122,18 +122,13 @@ namespace PowerUps {
 
 		bool onGround = rs::isOnGround(thisPtr, thisPtr->mCollider);
 		bool isWater = al::isInWater(thisPtr);
-		bool isFlicker = damage && damage->mDamageInvalidCount > 0;
-		bool isActive = !isFlicker && !isHacking() && !rs::isActiveDemo(thisPtr);
+		bool isActive = isPlayerActive(thisPtr);
 
 		// Re-arms the double jump; the Jump/Fall hooks never see the grounded frames
 		if (onGround || isWater) { isDoubleJump = false; isDoubleJumpConsume = false; }
 
 		f32 speedH = al::calcSpeedH(thisPtr);
 		f32 dashBorder = thisPtr->mConst->getDashFastBorderSpeed();
-
-		// Handle hammer attack
-		if (isHammer && al::isAlive(isHammer)
-			&& !al::isNerve(thisPtr, &HammerNrv)) { isHammer->makeActorDead(); al::invalidateHitSensor(isHammer, "AttackHack"); }
 
 		// Handle weapon arming and swapping
 		PlayerWeapon::update(thisPtr, isActive);
@@ -280,8 +275,9 @@ namespace PowerUps {
 
 			// Add attack to Super moves
 			static bool wasMoveSuper = false;
-			bool isMoveSuper = speedH >= dashBorder || anim->isAnim("JumpBroad8") || anim->isAnim("Glide");
-			updateAttackSensor(thisPtr, "GalaxySpin", isMoveSuper, wasMoveSuper);
+			bool isMoveSuper = (speedH >= dashBorder && al::isActionPlaying(isMarioModel, "MoveSuper")) || anim->isAnim("JumpBroad8") || anim->isAnim("Glide");
+			if (attackSensorRemaining > 0) wasMoveSuper = false; // an attack owns GalaxySpin while it runs
+			else updateAttackSensor(thisPtr, "GalaxySpin", isMoveSuper, wasMoveSuper);
 
 			// Apply effects for DashFastSuper
 			bool isDash = al::isPadHoldR(-1) && !isActionBusy() && al::isActionPlaying(isMarioModel, "MoveSuper") && speedH >= dashBorder;
@@ -474,8 +470,7 @@ namespace PowerUps {
 			}
 
 			spin.resetForNewSpin();
-			spin.trigger = spinPress;
-			al::setNerve(thisPtr, getNerveAt(spinCapNrvOffset));
+			startSpinCap(thisPtr, spinPress);
 		}
 	};
 

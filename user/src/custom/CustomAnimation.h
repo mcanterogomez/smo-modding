@@ -4,8 +4,6 @@
 #include "custom/PlayerWeapon.h"
 #include "custom/PlayerRetarget.h"
 
-class PlayerSpinCapAttack;
-
 // Mario Definitive model installed
 inline bool isDefinitve() {
 	static bool value = al::isExistFile("ObjectData/MarioDefinitve.txt");

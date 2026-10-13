@@ -6,6 +6,9 @@ namespace PlayerFireBall {
 
 	enum : int { Idle = -1, Shooting = 0 };
 
+	// Suits that shoot with R
+	inline bool isShootSuit() { return isMario || isFire || isIce || isBrawl || isSuper; }
+
 	inline const al::Nerve* shotNerve = nullptr; // the state the shot rides, handed forward by locomotion; a mismatch means something took the body
 
 	inline void spawnProjectile(PlayerActorHakoniwa* thisPtr, al::LiveActorGroup* pool, bool isBlast) {
@@ -38,7 +41,7 @@ namespace PlayerFireBall {
 
 	inline void update(PlayerActorHakoniwa* thisPtr) {
 		// Idle and nothing can start: skip the work below
-		if (fireStep == Idle && (!(isMario || isFire || isIce || isBrawl || isSuper) || !al::isPadTriggerR(-1))) { canAction = false; return; }
+		if (fireStep == Idle && (!isShootSuit() || !al::isPadTriggerR(-1))) { canAction = false; return; }
 
 		auto* anim = thisPtr->mAnimator;
 

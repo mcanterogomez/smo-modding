@@ -116,7 +116,7 @@ namespace PlayerFreeze {
                 al::tryEmitEffect(isHakoniwa, "Hit", &pos);
             }
 
-            hitBuffer[hitBufferCount++] = actor;
+            if (!isInHitBuffer(actor)) hitBuffer[hitBufferCount++] = actor;
             return false;
         }
 

@@ -325,10 +325,19 @@ namespace PlayerRetarget {
 		al::registerJointController(face, c);
 	}
 
-	// The body's springs and ride grip; a face part on its own bones blinks with the eye part (parts sharing the body's model, the silhouette, are skipped)
+	// Springs on the body's parts (a character's head or face part ships the springs of the skin it holds); each part's silhouette shares its model, so only the parts themselves
+	inline void tryInitPartSprings(al::LiveActor* body) {
+		for (s32 i = 0; i < al::getSubActorNum(body); i++) {
+			al::LiveActor* part = al::getSubActor(body, i);
+			if (part && part->getModelKeeper() && part->getModelKeeper() != body->getModelKeeper()) tryInitSprings(part);
+		}
+	}
+
+	// The body's and its parts' springs and ride grip; a face part on its own bones blinks with the eye part (parts sharing the body's model, the silhouette, are skipped)
 	inline void executeInitPlayer(al::LiveActor* model) {
 		if (!model || !model->getModelKeeper()) return;
 		tryInitSprings(model);
+		tryInitPartSprings(model);
 		tryInitRideGrip(model);
 		al::LiveActor* face = nullptr;
 		al::LiveActor* eye = nullptr;

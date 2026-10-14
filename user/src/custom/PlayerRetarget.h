@@ -10,6 +10,9 @@
 #include "Library/Resource/ResourceFunction.h"
 #include "Library/System/SystemKit.h"
 #include "Project/Resource/ResourceSystem.h"
+#include "Project/File/FileLoader.h"
+#include "Project/ArchiveHolder.h"
+#include "Project/ArchiveEntry.h"
 #include "System/ProjectInterface.h"
 #include "heap/seadExpHeap.h"
 #include "filedevice/seadFileDeviceMgr.h"
@@ -325,10 +328,19 @@ namespace PlayerRetarget {
 		al::registerJointController(face, c);
 	}
 
-	// The body's springs and ride grip; a face part on its own bones blinks with the eye part (parts sharing the body's model, the silhouette, are skipped)
+	// Springs on the body's parts (a character's head or face part ships the springs of the skin it holds); each part's silhouette shares its model, so only the parts themselves
+	inline void tryInitPartSprings(al::LiveActor* body) {
+		for (s32 i = 0; i < al::getSubActorNum(body); i++) {
+			al::LiveActor* part = al::getSubActor(body, i);
+			if (part && part->getModelKeeper() && part->getModelKeeper() != body->getModelKeeper()) tryInitSprings(part);
+		}
+	}
+
+	// The body's and its parts' springs and ride grip; a face part on its own bones blinks with the eye part (parts sharing the body's model, the silhouette, are skipped)
 	inline void executeInitPlayer(al::LiveActor* model) {
 		if (!model || !model->getModelKeeper()) return;
 		tryInitSprings(model);
+		tryInitPartSprings(model);
 		tryInitRideGrip(model);
 		al::LiveActor* face = nullptr;
 		al::LiveActor* eye = nullptr;
@@ -364,6 +376,7 @@ namespace PlayerRetarget {
 		inline u32 sSize = 0; // the slot's size, fit for the biggest character in the costume list
 		inline sead::Heap* sHeap = nullptr; // made the first time a character is worn: in the costume memory (kept for good, reused by every character) or else the world's
 		inline sead::Heap* sParent = nullptr; // the heap it came from
+		inline uintptr_t sStart = 0, sEnd = 0; // where the slot sits in memory (kept after the slot is gone, for forget)
 		inline bool sInCostumes = false;
 		inline char sPath[128] = ""; // the clips in it, as the game names them ("ObjectData/PlayerAnimationSonic")
 		inline s32 sStage = 0, sUsedStage = -1; // stages started, and the last one a body used its clips in
@@ -417,23 +430,38 @@ namespace PlayerRetarget {
 			logLine("Heaps %s: world free %zu largest %zu | costumes free %zu largest %zu | slot %s", when, world ? world->getFreeSize() : 0, world ? world->getMaxAllocatableSize(8) : 0, costumes ? costumes->getFreeSize() : 0, costumes ? costumes->getMaxAllocatableSize(8) : 0, sPath[0] ? sPath : "empty");
 		}
 
+		// The game remembers every file it opened until the world changes: the slot's files leave that list before their memory is freed, or wearing the character again opens the freed copy
+		inline s32 sHoles = 0; // places on that list the slot's files left (the next files the game opens take them)
+		inline void forget() {
+			al::ArchiveHolder* opened = alProjectInterface::getSystemKit()->getFileLoader()->mArchiveHolder;
+			s32 count = 0;
+			for (s32 i = 0; i < opened->mSize; i++) if (al::ArchiveEntry* entry = opened->mArchiveEntries.get(i); (uintptr_t)entry->mArchiveRes >= sStart && (uintptr_t)entry->mArchiveRes < sEnd) { entry->clear(); count++; }
+			sHoles += count;
+			logLine("ClipSlot: forgot %d files, list %d/%d", count, opened->mSize, opened->mArchiveEntries.size());
+		}
+
+		// The worn character leaves everything that knows its files: the game's opened-files list and the slot's resources (its memory is then freed, destroyed or already gone)
+		inline void drop() {
+			forget();
+			al::removeResourceCategory(category);
+			sPath[0] = '\0';
+		}
+
 		inline void empty() {
 			if (!sPath[0]) return;
 			logLine("ClipSlot: emptied of %s", sPath);
-			al::removeResourceCategory(category);
+			drop();
 			sHeap->freeAll();
 			al::addResourceCategory(category, files, sHeap);
-			sPath[0] = '\0';
 		}
 
 		// A world change: a slot in the world's memory goes with it; one in the costume memory is only emptied
 		inline void destroy() {
 			if (!sHeap) return;
 			if (sInCostumes) { empty(); return; }
-			al::removeResourceCategory(category);
+			drop();
 			sHeap->destroy();
 			sHeap = nullptr;
-			sPath[0] = '\0';
 		}
 
 		// A body's clips take the slot unless they're loaded already or another body in this stage uses the slot (then the world keeps them, as before)
@@ -444,7 +472,7 @@ namespace PlayerRetarget {
 			u32 need = setSize(archive + 15);
 			if (!need) { logLine("ClipSlot: %s stays in the world (unreadable)", path.cstr()); return; }
 			sead::Heap* costumes = al::tryFindNamedHeap("PlayerModel");
-			if (sHeap && sInCostumes && costumes != sParent) { al::removeResourceCategory(category); sHeap = nullptr; sPath[0] = '\0'; } // the costume memory was made again: the old slot went with it
+			if (sHeap && sInCostumes && costumes != sParent) { drop(); sHeap = nullptr; } // the costume memory was made again: the old slot went with it
 			if (!sHeap) {
 				const auto& categories = alProjectInterface::getSystemKit()->getResourceSystem()->mCategories;
 				// the costume memory first (characters' closet copies are Mario's, so it keeps room the world doesn't); the largest block, as a failed allocation halts the game
@@ -452,7 +480,7 @@ namespace PlayerRetarget {
 				sInCostumes = costumes && costumes->getMaxAllocatableSize(8) >= sSize;
 				sParent = sInCostumes ? costumes : al::getWorldResourceHeap();
 				size_t room = sParent ? sParent->getMaxAllocatableSize(8) : 0;
-				if (room >= sSize && categories.size() < categories.capacity() && (sHeap = sead::ExpHeap::create(sSize, category, sParent, 8))) al::addResourceCategory(category, files, sHeap);
+				if (room >= sSize && categories.size() < categories.capacity() && (sHeap = sead::ExpHeap::create(sSize, category, sParent, 8))) { al::addResourceCategory(category, files, sHeap); sStart = sHeap->getStartAddress(); sEnd = sHeap->getEndAddress(); }
 				logLine("ClipSlot: %s, %u (%s room %zu)", sHeap ? "made" : "no room, clips stay in the world", sSize, sInCostumes ? "costume" : "world", room);
 				if (!sHeap) return;
 			}
@@ -462,6 +490,24 @@ namespace PlayerRetarget {
 			sUsedStage = sStage;
 			logLine("ClipSlot: %s takes the slot", path.cstr());
 		}
+
+		// A file the game opens takes a place forget() left, so the list never runs past its end (past it the game writes over its first file)
+		struct ReuseHook : public mallow::hook::Trampoline<ReuseHook> {
+			static al::ArchiveEntry* Callback(al::ArchiveHolder* opened, const sead::SafeString& name, sead::Heap* heap, sead::FileDevice* device) {
+				if (sHoles > 0) {
+					for (s32 i = 0; i < opened->mSize; i++) {
+						al::ArchiveEntry* entry = opened->mArchiveEntries.get(i);
+						if (entry->mArchiveRes || !entry->mFileName.isEmpty()) continue;
+						entry->setLoadRequestInfo(name, heap, device);
+						sHoles--;
+						logLine("ClipSlot: %s reuses place %d", name.cstr(), i);
+						return entry;
+					}
+					sHoles = 0; // none left (the world change cleared the list)
+				}
+				return Orig(opened, name, heap, device);
+			}
+		};
 
 		// The game's table first; the worn character's files go to the slot, anything else to the current category (nothing of a character loads unless it's worn)
 		struct CategoryHook : public mallow::hook::Trampoline<CategoryHook> {
@@ -637,6 +683,7 @@ namespace PlayerRetarget {
 		ClipSlot::CategoryHook::InstallAtSymbol("_ZNK2al14ResourceSystem25findCategoryNameFromTableERKN4sead14SafeStringBaseIcEE");
 		ClipSlot::StageHook::InstallAtSymbol("_ZN10StageScene4initERKN2al13SceneInitInfoE");
 		ClipSlot::WorldHook::InstallAtSymbol("_ZN2al24destroyWorldResourceHeapEb");
+		ClipSlot::ReuseHook::InstallAtSymbol("_ZN2al13ArchiveHolder22addNewLoadRequestEntryERKN4sead14SafeStringBaseIcEEPNS1_4HeapEPNS1_10FileDeviceE");
 		BodyRetargetHook::InstallAtSymbol("_ZN2rs31createPlayerSklRetargettingInfoEPN2al9LiveActorERKN4sead7Vector3IfEE");
 		FootPrintArchiveHook::InstallAtSymbol("_ZN2al15FootPrintHolderC2EPNS_9LiveActorEPKcPNS_9HitSensorEPNS_15FootPrintServerE");
 		DemoBodyHook::InstallAtSymbol("_ZN14PlayerFunction23initMarioModelActorDemoEPP31PlayerJointControlPartsDynamicsPN2al9LiveActorERKNS3_13ActorInitInfoEPKcSA_PK11PlayerConstPN4sead7Vector3IfEESH_b");

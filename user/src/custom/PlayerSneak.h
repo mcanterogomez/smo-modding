@@ -1,5 +1,6 @@
 #pragma once
 #include "custom/.Globals.h"
+#include "custom/PowerUps.h"
 
 struct PlayerAnimControlRun { PlayerAnimator* mAnimator; };
 
@@ -16,10 +17,17 @@ namespace PlayerSneak {
 		return &pos;
 	}
 
-	// Swaps Walk to WalkSoft while the stick is held lightly
+	// Run anims picked at Mario's matching speed, legs sped up to the real one; swaps Walk to WalkSoft while the stick is held lightly
 	struct AnimControlRunUpdateHook : public mallow::hook::Trampoline<AnimControlRunUpdateHook> {
 		static void Callback(PlayerAnimControlRun* thisPtr, f32 speed, const sead::Vector3f& moveInput) {
-			Orig(thisPtr, speed, moveInput);
+			float marioSpeed = PowerUps::toMarioSpeed(speed, isHakoniwa->mConst);
+			runAnimScale = marioSpeed > 0.1f ? speed / marioSpeed : 1.0f; // 0.1f: standing still, no rate to match
+			float& startScale = isHakoniwa->mConst->mRunStartPlayFrameScale; // RunStart's window counts game frames, so it shrinks with the sped-up legs or the clip ends early and holds its last pose
+			float keepScale = startScale;
+			startScale = keepScale / (animRate(thisPtr->mAnimator) * runAnimScale);
+			Orig(thisPtr, marioSpeed, moveInput);
+			startScale = keepScale;
+			runAnimScale = 1.0f;
 
 			static float t = 1.0f;
 			if (al::isFirstStep(isHakoniwa)) t = 1.0f; // clear stale blend when movement restarts

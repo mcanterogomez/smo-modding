@@ -56,6 +56,9 @@ namespace PlayerCore {
                 isKnight = isSuit("MarioKnight");
                 isMario = isConfig()->enableMario && detectIsMario(costume, cap);
 
+                PowerUps::powers = &PowerUps::characterPowers[0];
+                for (const auto& row : PowerUps::characterPowers) if (isSuit(row.name)) PowerUps::powers = &row;
+
                 // Set Cap sounds
                 if ((isMetal || isKnight) && thisPtr->mHackCap) al::setSeKeeperPlayNamePrefix(thisPtr->mHackCap, "Iron");
 

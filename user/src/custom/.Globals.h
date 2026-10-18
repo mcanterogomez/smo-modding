@@ -225,6 +225,7 @@ inline int drillSensorRemaining = -1; // hitbox lingers N frames after drill pop
 inline int guardWindow = 0; // frames left to parry
 inline int isCapeActive = -1;
 inline int isDashDelay = -1; // -1 = idle, counts down while R is held and running, dash engages at 0
+inline float runAnimScale = 1.0f; // extra rate for the run anims, set while they update
 inline int isMarioActive = 0; // 0 = none, 1 = enabling, -1 = disabling
 inline int battleStance = 0; // frames left in the battle stance, 0 = off
 

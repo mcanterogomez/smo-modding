@@ -211,11 +211,11 @@ namespace CustomAnimation {
 		}
 	};
 
-	// Makes isAnim match remapped names; "Wait" reads false while remap or the idle cycle owns it, so the engine never triggers WaitRelaxStart
+	// Makes isAnim match remapped names; "Wait" reads false while remap, the idle cycle or a pending area wait owns it, so the engine never triggers WaitRelaxStart
 	struct PlayerAnimatorIsAnimHook : public mallow::hook::Trampoline<PlayerAnimatorIsAnimHook> {
 		static bool Callback(PlayerAnimator* thisPtr, const sead::SafeString& animName) {
 			const char* swapped = remapAnim(animName.cstr(), thisPtr);
-			if (al::isEqualString(animName.cstr(), "Wait") && (swapped || idleCycleAnim(false, thisPtr))) return false;
+			if (al::isEqualString(animName.cstr(), "Wait") && (swapped || idleCycleAnim(false, thisPtr) || (isPlayerAnim(thisPtr) && areaWaitAnim(isHakoniwa)))) return false; // an area wait waits one Wait loop, so a long Wait would let relax in first
 			return Orig(thisPtr, swapped ? swapped : animName.cstr());
 		}
 	};
@@ -223,7 +223,7 @@ namespace CustomAnimation {
 	// Every rate path funnels here: startAnim, setAnimRate, setSubAnimRate, PlayerAnimControlRun
 	struct PlayerAnimatorSetAnimRateCommonHook : public mallow::hook::Trampoline<PlayerAnimatorSetAnimRateCommonHook> {
 		static void Callback(PlayerAnimator* thisPtr, float rate) {
-			float scale = animRate(thisPtr);
+			float scale = animRate(thisPtr) * runAnimScale;
 			if (scale != 1.0f) {
 				rate *= scale;
 				thisPtr->mAnimFrameCtrl->mRate = rate; // the counter isAnimEnd reads

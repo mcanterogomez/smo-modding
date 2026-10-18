@@ -11,15 +11,36 @@
 #include "Library/Joint/JointSpringController.h"
 #include "Layout/ShopLayoutInfo.h"
 
-// Shared core of both water surface run judges
-template <typename Judge>
-static bool canRunOnSurface(const Judge* thisPtr) {
-	return thisPtr->mWaterSurfaceFinder->isFoundSurface()
-		&& al::isNearZeroOrGreater(thisPtr->mWaterSurfaceFinder->getDistance())
-		&& al::calcSpeedH(thisPtr->mPlayer) >= MIN_SPEED_RUN_ON_WATER;
-}
-
 namespace PowerUps {
+
+	// Character powers, one row per suit: jumps in a row, double jump, run speed scale, speed while charging the dash (0: halfway, under the border), dash speed, runs on water
+	struct CharacterPowers { const char* name; u32 maxJumps; bool canDoubleJump; f32 runScale; f32 chargeSpeed; f32 dashSpeed; bool runsOnWater; };
+	inline const CharacterPowers characterPowers[] = {
+		{"Mario", 3, false, 1.0f, 0.0f, 21.0f, false}, // every suit not listed
+		{"MarioColorSuper", 3, false, 1.0f, 0.0f, 28.0f, true},
+		{"MarioColorBrawl", 1, true, 1.0f, 0.0f, 21.0f, false},
+		{"Wario", 2, false, 1.0f, 0.0f, 21.0f, false},
+		{"Waluigi", 2, false, 1.0f, 0.0f, 21.0f, false},
+		{"Crash", 1, true, 1.0f, 0.0f, 21.0f, false},
+		{"Sonic", 1, true, 17.0f / 14.0f, 27.0f, 37.0f, true}, // run 17 vs Mario's 14, charge and dash in Mario's steps (17.5, 21 x 17/14)
+	};
+	inline const CharacterPowers* powers = &characterPowers[0];
+
+	// Mario's speed that matches this character's: run, charge and dash line up with Mario's, so the run anims switch where his do
+	inline float toMarioSpeed(float speed, const PlayerConst* c) {
+		float run = c->getNormalMaxSpeed(), dash = characterPowers[0].dashSpeed, charge = (run + dash) * 0.5f, ownRun = run * powers->runScale;
+		if (powers->chargeSpeed <= 0.0f || speed <= ownRun) return speed / powers->runScale;
+		if (speed <= powers->chargeSpeed) return al::lerpValue(run, charge, (speed - ownRun) / (powers->chargeSpeed - ownRun));
+		return charge + (speed - powers->chargeSpeed) * (dash - charge) / (powers->dashSpeed - powers->chargeSpeed);
+	}
+
+	// Shared core of both water surface run judges, speed judged at Mario's matching speed
+	template <typename Judge>
+	static bool canRunOnSurface(const Judge* thisPtr) {
+		return thisPtr->mWaterSurfaceFinder->isFoundSurface()
+			&& al::isNearZeroOrGreater(thisPtr->mWaterSurfaceFinder->getDistance())
+			&& toMarioSpeed(al::calcSpeedH(thisPtr->mPlayer), isHakoniwa->mConst) >= MIN_SPEED_RUN_ON_WATER;
+	}
 
 	// Swap the iceball archive in for the ice suit
 	struct FireBrosFireBallInitArchive : public mallow::hook::Inline<FireBrosFireBallInitArchive> {
@@ -325,10 +346,12 @@ namespace PowerUps {
 			if (!al::isPadHoldR(-1) || slowFrames > 30) isDashDelay = -1; // 30: grace before a slowdown drops the charge
 			else if (isRunning && !isActionBusy() && isDashDelay != 0) isDashDelay = isDashDelay < 0 ? 119 : isDashDelay - 1; // 119: windup length, 120 frames (2s)
 
-			// One shot per dash, re-armed by leaving the run, dropping the charge or braking — terrain breaks none of them
+			// One shot per dash, re-armed by leaving the run (10 frames), dropping the charge or braking — terrain breaks none of them
 			static bool wasDash = false;
-			if (!isRunning || isDashDelay != 0 || slowFrames > 0) wasDash = false;
-			else if (!wasDash && speedH >= dashBorder) {
+			static int offRunFrames = 0;
+			offRunFrames = isRunning ? 0 : offRunFrames + 1;
+			if (offRunFrames > 10 || isDashDelay != 0 || slowFrames > 0) wasDash = false; // 10: a short drop out of the run (water bob) keeps the shot spent
+			else if (isRunning && !wasDash && speedH >= dashBorder) {
 				const char* fx = isSuper ? "AccelSecond" : "Accel";
 				al::tryStartSe(thisPtr, fx);
 				al::tryEmitEffect(isMarioModel, fx, nullptr);
@@ -376,13 +399,13 @@ namespace PowerUps {
 		using Base = mallow::hook::Trampoline<PlayerActorHakoniwaDoubleJump<Variant>>;
 		static void Callback(PlayerActorHakoniwa* thisPtr) {
 			Base::Orig(thisPtr);
-			if (!isBrawl && !isFeather && !isMario) return; // no suit here can double jump, skip the lookups
+			if (!powers->canDoubleJump && !isFeather && !isMario) return; // no suit here can double jump, skip the lookups
 
 			auto* cape = al::tryGetSubActor(isMarioModel, "ケープ");
 			bool isCape = isFeather || (isMario && cape && al::isAlive(cape));
 
-			// Mario needs the cape out, Brawl always has it
-			if (!isBrawl && !isCape) return;
+			// Mario needs the cape out, the characters with a double jump always have it
+			if (!powers->canDoubleJump && !isCape) return;
 
 			if (!isDoubleJump && !rs::isOnGround(thisPtr, thisPtr->mCollider) && (al::isPadTriggerA(-1) || al::isPadTriggerB(-1))
 			) {
@@ -403,11 +426,11 @@ namespace PowerUps {
 		}
 	};
 
-	// Brawl drives its own jump count
+	// Each character's jump chain ends at its own count, then starts over
 	struct PlayerStateJumpTryCountUp : public mallow::hook::Trampoline<PlayerStateJumpTryCountUp> {
 		static void Callback(PlayerStateJump* state, PlayerContinuousJump* cont) {
-			if (isBrawl) return;
 			Orig(state, cont);
+			if (cont->mCount >= powers->maxJumps) cont->clear();
 		}
 	};
 
@@ -530,17 +553,19 @@ namespace PowerUps {
 		}
 	};
 
-	// Ground speed cap for this update: wading, dash and sneak, vanilla's restored after
+	// Ground speed cap for this update: character run, wading, dash and sneak, vanilla's restored after
 	struct PlayerActionGroundMoveControlUpdate : public mallow::hook::Trampoline<PlayerActionGroundMoveControlUpdate> {
 		static float Callback(PlayerActionGroundMoveControl* thisPtr) {
 			if (isHacking()) return Orig(thisPtr);
 
 			float isMaxSpeed = thisPtr->mMaxSpeed;
+			thisPtr->mMaxSpeed *= powers->runScale;
 			if (isMetal && isSubmerged(isHakoniwa)) thisPtr->mMaxSpeed *= 0.6f;
 			#ifdef ALLOW_DASH
 				else if (isDashDelay >= 0 && !isActionBusy()) {
-					float full = isSuper ? 28.0f : 21.0f; // dash tier
-					thisPtr->mMaxSpeed = isDashDelay == 0 ? full : sead::Mathf::min((isMaxSpeed + full) * 0.5f, thisPtr->mConst->getDashFastBorderSpeed() - 0.5f); // windup: halfway, under the border
+					float full = powers->dashSpeed; // dash tier
+					if (isDashDelay == 0) thisPtr->mMaxSpeed = full;
+					else thisPtr->mMaxSpeed = powers->chargeSpeed > 0.0f ? powers->chargeSpeed : sead::Mathf::min((isMaxSpeed + full) * 0.5f, thisPtr->mConst->getDashFastBorderSpeed() - 0.5f); // windup: halfway, under the border
 				}
 			#endif
 			else if (isSneaking) thisPtr->mMaxSpeed = thisPtr->mConst->getNormalMinSpeed() * (isMetal ? 1.25f : 2.5f); // sneak ceiling
@@ -583,20 +608,20 @@ namespace PowerUps {
 		}
 	};
 
-	// Super may start running on water, with an extra descent check
+	// Suits that run on water may start running on it, with an extra descent check
 	struct StartWaterSurfaceRunJudge : public mallow::hook::Trampoline<StartWaterSurfaceRunJudge> {
 		static bool Callback(const PlayerJudgeStartWaterSurfaceRun* thisPtr) {
-			if (!isSuper) return Orig(thisPtr);
+			if (!powers->runsOnWater) return Orig(thisPtr);
 			return canRunOnSurface(thisPtr)
 				&& al::getGravity(thisPtr->mPlayer).dot(al::getVelocity(thisPtr->mPlayer)) >= 0.0f;
 		}
 	};
 
-	// Super keeps running on water, and the result drives the two patches below
+	// Suits that run on water keep running on it, and the result drives the two patches below
 	struct WaterSurfaceRunJudge : public mallow::hook::Trampoline<WaterSurfaceRunJudge> {
 		static bool Callback(const PlayerJudgeWaterSurfaceRun* thisPtr) {
 			isSuperRunningOnSurface = false;
-			if (!isSuper) return Orig(thisPtr);
+			if (!powers->runsOnWater) return Orig(thisPtr);
 
 			isSuperRunningOnSurface = canRunOnSurface(thisPtr);
 			return isSuperRunningOnSurface;

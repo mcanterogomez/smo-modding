@@ -2,6 +2,7 @@
 
 #include "Library/Nerve/NerveStateBase.h"
 #include "math/seadVector.h"
+#include "Player/PlayerContinuousJump.h"
 
 namespace al {
 class ActorStateBase;
@@ -22,11 +23,6 @@ class PlayerAnimator;
 class PlayerActionDiveInWater;
 class PlayerActionAirMoveControl;
 class HackCap;
-
-class PlayerContinuousJump {
-public:
-    void clear();
-};
 
 class PlayerStateJump : public al::ActorStateBase {
 public:

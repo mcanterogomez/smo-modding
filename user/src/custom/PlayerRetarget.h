@@ -1,25 +1,12 @@
 #pragma once
-#include "custom/.Globals.h"
+#include "custom/PlayerResources.h"
 #include "Library/Joint/JointControllerBase.h"
 #include "Library/Joint/JointSpringControllerHolder.h"
 #include "Library/LiveActor/ActorResourceFunction.h"
-#include "Library/Yaml/ByamlIter.h"
 #include "Library/Model/ModelCtrl.h"
 #include "Library/Model/ModelKeeper.h"
-#include "Library/Memory/HeapUtil.h"
-#include "Library/Resource/ResourceFunction.h"
-#include "Library/System/SystemKit.h"
-#include "Project/Resource/ResourceSystem.h"
-#include "Project/File/FileLoader.h"
-#include "Project/ArchiveHolder.h"
-#include "Project/ArchiveEntry.h"
-#include "System/ProjectInterface.h"
-#include "heap/seadExpHeap.h"
-#include "filedevice/seadFileDeviceMgr.h"
 #include "nn/g3d/ModelObj.h"
 #include "nn/g3d/ResSkeleton.h"
-#include <algorithm>
-#include <cstring>
 
 // A character on Mario's skeleton: its body, glove and face clips converted at build time (PlayerAnimation<body>, PlayerAnimationHandL<body>...)
 namespace PlayerRetarget {
@@ -353,206 +340,6 @@ namespace PlayerRetarget {
 		if (face) tryInitFaceBones(face, eye);
 	}
 
-	// A character's body ships its converted clips as PlayerAnimation<body> (PlayerAnimationSonic); each body's answer is remembered (several suits can be on)
-	struct ClipAnswer { char body[64]; bool has; };
-	inline ClipAnswer sClipAnswers[8] = {};
-	inline s32 sClipAnswerNext = 0;
-	inline bool hasOwnClips(const char* body) {
-		if (!body) return false;
-		for (const auto& a : sClipAnswers) if (a.body[0] && al::isEqualString(a.body, body)) return a.has;
-		ClipAnswer& a = sClipAnswers[sClipAnswerNext++ % 8];
-		al::copyString(a.body, body, sizeof(a.body));
-		a.has = al::isExistFile(al::StringTmp<128>("ObjectData/PlayerAnimation%s.szs", body));
-		return a.has;
-	}
-
-	// A worn character's files (model, parts, clips) load into one slot, emptied for the next character, so nothing of a character stays loaded once it's taken off
-	namespace ClipSlot {
-		constexpr const char* category = "PlayerRetargetClips";
-		constexpr u32 margin = 128 * 1024; // what each load takes beyond its unpacked size (30 KB measured)
-		inline const char* sPartSuffixes[] = {"", "Face", "Eye", "HandL", "HandR", "HandTexture", "Head", "HeadTexture", "Cap", "2D"}; // its model files ("Sonic", "SonicFace"...)
-		inline const char* sClipParts[] = {"", "HandL", "HandR", "Face"}; // its clips ("PlayerAnimationSonic", "PlayerAnimationHandLSonic"...)
-		constexpr s32 files = sizeof(sPartSuffixes) / sizeof(*sPartSuffixes) + sizeof(sClipParts) / sizeof(*sClipParts); // the resources the slot's category must hold: one per file it can take
-		inline u32 sSize = 0; // the slot's size, fit for the biggest character in the costume list
-		inline sead::Heap* sHeap = nullptr; // made the first time a character is worn: in the costume memory (kept for good, reused by every character) or else the world's
-		inline sead::Heap* sParent = nullptr; // the heap it came from
-		inline uintptr_t sStart = 0, sEnd = 0; // where the slot sits in memory (kept after the slot is gone, for forget)
-		inline bool sInCostumes = false;
-		inline char sPath[128] = ""; // the clips in it, as the game names them ("ObjectData/PlayerAnimationSonic")
-		inline s32 sStage = 0, sUsedStage = -1; // stages started, and the last one a body used its clips in
-
-		// An archive's unpacked size from its header (0 if unreadable): a failed allocation halts the game, so nothing goes anywhere it isn't known to fit
-		inline u32 getUnpackedSize(const char* path) {
-			sead::FileDevice* device = sead::FileDeviceMgr::instance()->getMainFileDevice();
-			sead::FileHandle handle;
-			u8 head[8] = {};
-			u32 read = 0;
-			if (!device->tryOpen(&handle, al::StringTmp<128>("%s.szs", path), sead::FileDevice::cFileOpenFlag_ReadOnly, 0) || !device->tryRead(&read, &handle, head, 8) || read != 8 || std::memcmp(head, "Yaz0", 4)) return 0;
-			return head[4] << 24 | head[5] << 16 | head[6] << 8 | head[7];
-		}
-
-		// The slot's files: the worn body's clips and model files; an "as Mario" mod replaces Mario for good, so only its body clips
-		inline bool isSlotFile(const char* name) {
-			if (!sPath[0] || !al::isStartWithString(name, "ObjectData/")) return false;
-			name += 11;
-			const char* body = sPath + 26; // after "ObjectData/PlayerAnimation"
-			if (al::isEqualString(body, "Mario")) return al::isEqualString(name, sPath + 11);
-			if (al::isStartWithString(name, "PlayerAnimation")) for (const char* part : sClipParts) if (al::isStartWithString(name + 15, part) && al::isEqualString(name + 15 + std::strlen(part), body)) return true;
-			if (al::isStartWithString(name, body)) for (const char* part : sPartSuffixes) if (al::isEqualString(name + std::strlen(body), part)) return true;
-			return false;
-		}
-
-		// What the slot's files unpack to (0 if the body ships no clips)
-		inline u32 setSize(const char* body) {
-			u32 need = getUnpackedSize(al::StringTmp<128>("ObjectData/PlayerAnimation%s", body).cstr());
-			if (!need || al::isEqualString(body, "Mario")) return need;
-			for (const char* part : sClipParts) if (part[0]) need += getUnpackedSize(al::StringTmp<128>("ObjectData/PlayerAnimation%s%s", part, body).cstr());
-			for (const char* part : sPartSuffixes) need += getUnpackedSize(al::StringTmp<128>("ObjectData/%s%s", body, part).cstr());
-			return need;
-		}
-
-		// The biggest set among the costumes the closet can dress in (SystemData/ItemList), so the one slot fits whichever character is worn later
-		inline u32 boxSize(const char* worn) {
-			u32 most = setSize(worn);
-			if (const u8* list = al::tryGetBymlFromArcName("SystemData/ItemList", "ItemCloth")) {
-				al::ByamlIter clothes(list), item;
-				for (s32 i = 0; i < clothes.getSize(); i++) {
-					const char* name = nullptr;
-					if (clothes.tryGetIterByIndex(&item, i) && item.tryGetStringByKey(&name, "ItemName") && hasOwnClips(name)) most = std::max(most, setSize(name));
-				}
-			}
-			return most + margin * files;
-		}
-
-		inline void logHeaps(const char* when) {
-			const sead::Heap* world = al::getWorldResourceHeap();
-			const sead::Heap* costumes = al::tryFindNamedHeap("PlayerModel");
-			logLine("Heaps %s: world free %zu largest %zu | costumes free %zu largest %zu | slot %s", when, world ? world->getFreeSize() : 0, world ? world->getMaxAllocatableSize(8) : 0, costumes ? costumes->getFreeSize() : 0, costumes ? costumes->getMaxAllocatableSize(8) : 0, sPath[0] ? sPath : "empty");
-		}
-
-		// The game remembers every file it opened until the world changes: the slot's files leave that list before their memory is freed, or wearing the character again opens the freed copy
-		inline s32 sHoles = 0; // places on that list the slot's files left (the next files the game opens take them)
-		inline void forget() {
-			al::ArchiveHolder* opened = alProjectInterface::getSystemKit()->getFileLoader()->mArchiveHolder;
-			s32 count = 0;
-			for (s32 i = 0; i < opened->mSize; i++) if (al::ArchiveEntry* entry = opened->mArchiveEntries.get(i); (uintptr_t)entry->mArchiveRes >= sStart && (uintptr_t)entry->mArchiveRes < sEnd) { entry->clear(); count++; }
-			sHoles += count;
-			logLine("ClipSlot: forgot %d files, list %d/%d", count, opened->mSize, opened->mArchiveEntries.size());
-		}
-
-		// The worn character leaves everything that knows its files: the game's opened-files list and the slot's resources (its memory is then freed, destroyed or already gone)
-		inline void drop() {
-			forget();
-			al::removeResourceCategory(category);
-			sPath[0] = '\0';
-		}
-
-		inline void empty() {
-			if (!sPath[0]) return;
-			logLine("ClipSlot: emptied of %s", sPath);
-			drop();
-			sHeap->freeAll();
-			al::addResourceCategory(category, files, sHeap);
-		}
-
-		// A world change: a slot in the world's memory goes with it; one in the costume memory is only emptied
-		inline void destroy() {
-			if (!sHeap) return;
-			if (sInCostumes) { empty(); return; }
-			drop();
-			sHeap->destroy();
-			sHeap = nullptr;
-		}
-
-		// A body's clips take the slot unless they're loaded already or another body in this stage uses the slot (then the world keeps them, as before)
-		inline void claim(const char* archive) {
-			al::StringTmp<128> path("ObjectData/%s", archive);
-			if (sPath[0] && al::isEqualString(sPath, path.cstr())) { sUsedStage = sStage; return; }
-			if ((sPath[0] && sUsedStage == sStage) || al::findResource(path.cstr())) { logLine("ClipSlot: %s stays in the world (slot busy or already loaded)", path.cstr()); return; }
-			u32 need = setSize(archive + 15);
-			if (!need) { logLine("ClipSlot: %s stays in the world (unreadable)", path.cstr()); return; }
-			sead::Heap* costumes = al::tryFindNamedHeap("PlayerModel");
-			if (sHeap && sInCostumes && costumes != sParent) { drop(); sHeap = nullptr; } // the costume memory was made again: the old slot went with it
-			if (!sHeap) {
-				const auto& categories = alProjectInterface::getSystemKit()->getResourceSystem()->mCategories;
-				// the costume memory first (characters' closet copies are Mario's, so it keeps room the world doesn't); the largest block, as a failed allocation halts the game
-				sSize = boxSize(archive + 15);
-				sInCostumes = costumes && costumes->getMaxAllocatableSize(8) >= sSize;
-				sParent = sInCostumes ? costumes : al::getWorldResourceHeap();
-				size_t room = sParent ? sParent->getMaxAllocatableSize(8) : 0;
-				if (room >= sSize && categories.size() < categories.capacity() && (sHeap = sead::ExpHeap::create(sSize, category, sParent, 8))) { al::addResourceCategory(category, files, sHeap); sStart = sHeap->getStartAddress(); sEnd = sHeap->getEndAddress(); }
-				logLine("ClipSlot: %s, %u (%s room %zu)", sHeap ? "made" : "no room, clips stay in the world", sSize, sInCostumes ? "costume" : "world", room);
-				if (!sHeap) return;
-			}
-			if (need + margin * files > sSize) { logLine("ClipSlot: %s stays in the world (its files unpack to %u, the slot takes %u)", path.cstr(), need, sSize); return; }
-			empty();
-			al::copyString(sPath, path.cstr(), sizeof(sPath));
-			sUsedStage = sStage;
-			logLine("ClipSlot: %s takes the slot", path.cstr());
-		}
-
-		// A file the game opens takes a place forget() left, so the list never runs past its end (past it the game writes over its first file)
-		struct ReuseHook : public mallow::hook::Trampoline<ReuseHook> {
-			static al::ArchiveEntry* Callback(al::ArchiveHolder* opened, const sead::SafeString& name, sead::Heap* heap, sead::FileDevice* device) {
-				if (sHoles > 0) {
-					for (s32 i = 0; i < opened->mSize; i++) {
-						al::ArchiveEntry* entry = opened->mArchiveEntries.get(i);
-						if (entry->mArchiveRes || !entry->mFileName.isEmpty()) continue;
-						entry->setLoadRequestInfo(name, heap, device);
-						sHoles--;
-						logLine("ClipSlot: %s reuses place %d", name.cstr(), i);
-						return entry;
-					}
-					sHoles = 0; // none left (the world change cleared the list)
-				}
-				return Orig(opened, name, heap, device);
-			}
-		};
-
-		// The game's table first; the worn character's files go to the slot, anything else to the current category (nothing of a character loads unless it's worn)
-		struct CategoryHook : public mallow::hook::Trampoline<CategoryHook> {
-			static const char* Callback(const al::ResourceSystem* system, const sead::SafeString& name) {
-				if (isSlotFile(name.cstr())) { logLine("ClipSlot: %s (%u) into the slot, %zu free", name.cstr(), getUnpackedSize(name.cstr()), sHeap ? sHeap->getFreeSize() : 0); return category; }
-				const char* listed = Orig(system, name);
-				if (u32 big = getUnpackedSize(name.cstr()); big >= 4 * 1024 * 1024) logLine("ClipSlot: %s (%u) -> %s", name.cstr(), big, listed ? listed : "current");
-				return listed;
-			}
-		};
-
-		// Stages are counted; once one is set up (the last one's bodies are gone by then), clips none of its bodies used leave the slot
-		struct StageHook : public mallow::hook::Trampoline<StageHook> {
-			static void Callback(void* scene, const void* info) {
-				sStage++;
-				logHeaps("before stage");
-				Orig(scene, info);
-				if (sUsedStage != sStage) empty();
-				else logLine("ClipSlot: %s, %zu bytes spare", sPath, sHeap->getFreeSize());
-				logHeaps("after stage");
-			}
-		};
-
-		// A world change: the slot is emptied first (destroyed if it came from the world's memory)
-		struct WorldHook : public mallow::hook::Trampoline<WorldHook> {
-			static void Callback(bool removeCategory) {
-				logLine("ClipSlot: world memory destroyed (%d)", removeCategory);
-				destroy();
-				Orig(removeCategory);
-			}
-		};
-	}
-
-	// The leg hook asks every frame: the answer is kept per body until the next stage
-	inline bool hasOwnClips(const al::LiveActor* body) {
-		static const al::LiveActor* sBody = nullptr;
-		static s32 sStage = -1;
-		static bool sHas = false;
-		if (body != sBody || sStage != ClipSlot::sStage) { sBody = body; sStage = ClipSlot::sStage; sHas = hasOwnClips(al::getModelName(body)); }
-		return sHas;
-	}
-
-	// The player's body is a character port (it ships its own clips)
-	inline bool isPort() { return isMarioModel && hasOwnClips(isMarioModel); }
-
 	// Controllers a model adds to the game's own: its springs, ride grips and face bones (only characters ship those)
 	inline s32 extraControllerCount(const al::LiveActor* actor) {
 		return getSpringCount(actor) + al::isExistModelResourceYaml(actor, "RideGrip", nullptr) + al::isExistModelResourceYaml(actor, "FaceBones", nullptr);
@@ -563,40 +350,6 @@ namespace PlayerRetarget {
 		static void Callback(const al::LiveActor* actor, s32 count) {
 			if (actor) count += extraControllerCount(actor);
 			Orig(actor, count);
-		}
-	};
-
-	// Every body (the player's, cutscene and closet copies, all set up here) with its own clips loads them instead of Mario's
-	// Closet copies (Mario) play Mario's Wait kept in the worn character's file (ClosetWait), already loaded; an "as Mario" body has its own closet file
-	inline bool isClosetBody = false;
-	inline const char* sClosetWorn = nullptr;
-	inline char sBodyAnimation[96] = "";
-	struct BodyAnimationArchiveHook : public mallow::hook::Inline<BodyAnimationArchiveHook> {
-		static void Callback(exl::hook::InlineCtx* ctx) {
-			const char* model = (const char*)ctx->X[28];
-			bool isOwn = hasOwnClips(model);
-			const char* body = isOwn ? model : isClosetBody && hasOwnClips(sClosetWorn) ? sClosetWorn : nullptr;
-			if (!body) return;
-			al::StringTmp<96> archive(isClosetBody && isOwn ? "PlayerAnimation%sCloset" : "PlayerAnimation%s", body);
-			if (isClosetBody && isOwn && !al::isExistFile(al::StringTmp<128>("ObjectData/%s.szs", archive.cstr()))) return;
-			al::copyString(sBodyAnimation, archive.cstr(), sizeof(sBodyAnimation));
-			if (!isClosetBody || !isOwn) ClipSlot::claim(sBodyAnimation); // closet copies load before the player: whichever comes first puts the clips in the slot
-			ctx->X[24] = (u64)sBodyAnimation;
-		}
-	};
-
-	// The player reads footprints from PlayerAnimation by name; a character with its own clips reads its own copy, so Mario's big file never loads
-	inline char sFootPrintArchive[96] = "";
-	struct FootPrintArchiveHook : public mallow::hook::Trampoline<FootPrintArchiveHook> {
-		static void Callback(void* thisPtr, al::LiveActor* actor, const char* archive, al::HitSensor* sensor, void* server) {
-			if (archive && al::isEqualString(archive, "PlayerAnimation")) {
-				const char* costume = GameDataFunction::getCurrentCostumeTypeName(actor);
-				if (hasOwnClips(costume)) {
-					al::copyString(sFootPrintArchive, al::StringTmp<96>("PlayerAnimation%s", costume).cstr(), sizeof(sFootPrintArchive));
-					archive = sFootPrintArchive;
-				}
-			}
-			Orig(thisPtr, actor, archive, sensor, server);
 		}
 	};
 
@@ -686,6 +439,14 @@ namespace PlayerRetarget {
 		ClipSlot::ReuseHook::InstallAtSymbol("_ZN2al13ArchiveHolder22addNewLoadRequestEntryERKN4sead14SafeStringBaseIcEEPNS1_4HeapEPNS1_10FileDeviceE");
 		BodyRetargetHook::InstallAtSymbol("_ZN2rs31createPlayerSklRetargettingInfoEPN2al9LiveActorERKN4sead7Vector3IfEE");
 		FootPrintArchiveHook::InstallAtSymbol("_ZN2al15FootPrintHolderC2EPNS_9LiveActorEPKcPNS_9HitSensorEPNS_15FootPrintServerE");
+		PackListHook::InstallAtSymbol("_ZN2al24AudioResourceLoadingInfo10createInfoEPKNS_8ResourceE");
+		SoundListHook::InstallAtSymbol("_ZN2al16tryFindAudioInfoINS_10SeUserInfoEEEPKT_PKNS_22AudioInfoListWithPartsIS2_EEPKc");
+		EffectListHook::InstallAtSymbol("_ZN16alEffectFunction17tryFindEffectUserEPKN2al16EffectSystemInfoEPKc");
+		GameSoundsHook::InstallAtSymbol("_ZN2al10SeDataBase33setResourceSpecInfoToResourceInfoEv");
+		NewClipsHook::InstallAtSymbol("_ZN2al20InitResourceDataAnim9tryCreateEPNS_8ResourceES2_");
+		NewTableHook::InstallAtSymbol("_ZNK2al8Resource7getBymlERKN4sead14SafeStringBaseIcEE");
+		TryNewTableHook::InstallAtSymbol("_ZNK2al8Resource10tryGetBymlERKN4sead14SafeStringBaseIcEE");
+		EffectListBuildHook::InstallAtSymbol("_ZN2al14EffectDataBaseC2EPKc");
 		DemoBodyHook::InstallAtSymbol("_ZN14PlayerFunction23initMarioModelActorDemoEPP31PlayerJointControlPartsDynamicsPN2al9LiveActorERKNS3_13ActorInitInfoEPKcSA_PK11PlayerConstPN4sead7Vector3IfEESH_b");
 		ClosetBodyHook::InstallAtSymbol("_ZN14PlayerFunction25initMarioModelActorClosetEPP31PlayerJointControlPartsDynamicsPN2al9LiveActorERKNS3_13ActorInitInfoEPKcSA_PK11PlayerConstPN4sead7Vector3IfEESH_PP30PlayerJointControlFollowMtxPtrPNSE_8Matrix34IfEE");
 		ClosetActionHook::InstallAtSymbol("_ZN21StageSceneStateCloset16startActionMarioEPN2al9LiveActorEPKc");

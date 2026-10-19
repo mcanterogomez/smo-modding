@@ -353,7 +353,7 @@ namespace PowerUps {
 			if (offRunFrames > 10 || isDashDelay != 0 || slowFrames > 0) wasDash = false; // 10: a short drop out of the run (water bob) keeps the shot spent
 			else if (isRunning && !wasDash && speedH >= dashBorder) {
 				const char* fx = isSuper ? "AccelSecond" : "Accel";
-				al::tryStartSe(thisPtr, fx);
+				al::tryStartSe(thisPtr, al::isEqualString(powers->name, "Sonic") ? "SePlySonicHoming" : fx);
 				al::tryEmitEffect(isMarioModel, fx, nullptr);
 				wasDash = true;
 			}
@@ -414,13 +414,14 @@ namespace PowerUps {
 
 				al::setVelocityY(thisPtr, 0.0f); // the Jump nerve lands next frame, a touchdown before then would eat it
 				thisPtr->mContinuousJump->clear(); // clear jump chain to always reset power
-				if (isCape) al::tryStartSe(thisPtr, "CapeFloat");
 				al::tryEmitEffect(isMarioModel, "DoubleJump", nullptr);
 				al::setNerve(thisPtr, getNerveAt(nrvHakoniwaJump));
 			}
 
 			if (isDoubleJumpConsume && al::isFirstStep(thisPtr)) {
-				thisPtr->mAnimator->startAnim(isCape ? "DoubleJump" : "DoubleJumpSmash");
+				al::tryStopAllSeFromUser(thisPtr, -1, nullptr); // the Jump nerve's own jump sounds (its Jump action), started this same frame
+				if (isCape) al::tryStartSe(thisPtr, "CapeFloat");
+				thisPtr->mAnimator->startAnim(isCape ? "DoubleJumpCape" : "DoubleJump");
 				isDoubleJumpConsume = false;
 			}
 		}

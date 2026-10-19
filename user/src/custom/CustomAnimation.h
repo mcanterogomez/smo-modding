@@ -263,7 +263,7 @@ namespace CustomAnimation {
 					"MarioColorMetal2D", "MarioColorSuper2D", "MarioDrill2D", "MarioFeather2D", "MarioTanooki2D"};
 				for (const char* suit : suits) isSwap = isSwap || al::isEqualString(model, suit);
 			#endif
-			if (isSwap) ctx->X[25] = (u64)"PlayerAnimationNew2D";
+			if (isSwap) ctx->X[25] = (u64)"PlayerAnimation2DNew";
 		}
 	};
 

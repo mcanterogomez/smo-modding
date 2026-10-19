@@ -23,7 +23,9 @@ namespace PlayerCore {
             battleStance = 0;
             isSneaking = false;
 
+            PlayerRetarget::beginPlayerSetup(actorInfo, playerInfo);
             Orig(thisPtr, actorInfo, playerInfo);
+            PlayerRetarget::isPlayerSetup = false;
 
             // Set Hakoniwa pointer
             isHakoniwa = thisPtr;

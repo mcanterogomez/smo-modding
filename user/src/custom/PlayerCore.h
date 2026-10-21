@@ -101,7 +101,7 @@ namespace PlayerCore {
 
                 if (isPadTriggerGalaxySpin(-1)) { isConfig()->spinOnly = !isConfig()->spinOnly; changed = true; }
                 else if (al::isPadTriggerY(-1) || al::isPadTriggerX(-1)) { isConfig()->attackButton = isConfig()->attackButton == 'Y' ? 'X' : 'Y'; changed = true; }
-                else if (thisPtr->mInput->isTriggerJump()) { isConfig()->galaxySfx = !isConfig()->galaxySfx; changed = true; }
+                else if (thisPtr->mInput->isTriggerJump() && isMarioGalaxy(thisPtr)) { isConfig()->galaxySfx = !isConfig()->galaxySfx; changed = true; }
             #ifdef ALLOW_POWERUPS
                 else if (al::isPadTriggerZR(-1) && onGround
                     && detectIsMario(GameDataFunction::getCurrentCostumeTypeName(thisPtr), GameDataFunction::getCurrentCapTypeName(thisPtr))
@@ -329,7 +329,7 @@ namespace PlayerCore {
             if (al::isEqualSubString(name, "Hit")) isEffect = true;
 
             if (isConfig()->galaxySfx && al::isEqualString(name, "SpinCapStart2Right")
-                && isHakoniwa && al::isEqualSubString(isHakoniwa->mAnimator->mCurAnim, "SpinSeparate")) return false;
+                && isHakoniwa && isMarioGalaxy(isHakoniwa) && al::isEqualSubString(isHakoniwa->mAnimator->mCurAnim, "SpinSeparate")) return false;
             return Orig(effect, pos, useCurrentPos);
         }
     };

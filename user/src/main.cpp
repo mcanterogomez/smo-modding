@@ -5,6 +5,7 @@
 #include "custom/PlayerSpinAttack.h"
 #include "custom/PlayerSneak.h"
 #include "custom/AttackSensor.h"
+#include "custom/PlayerCloset.h"
 
 struct TriggerCameraReset : public mallow::hook::Trampoline<TriggerCameraReset> {
     static bool Callback(al::LiveActor* actor, int port) {
@@ -42,6 +43,7 @@ extern "C" void userMain() {
     AttackSensor::Install();
     CustomAnimation::Install();
     KoopaBattle::Install();
+    PlayerCloset::Install();
 
     #ifdef ALLOW_POWERUPS
         PowerUps::Install();

@@ -11,6 +11,10 @@
 // A character on Mario's skeleton: its body, glove and face clips converted at build time (PlayerAnimation<body>, PlayerAnimationHandL<body>...)
 namespace PlayerRetarget {
 
+	// =========================================================
+	//                       SKELETON MATH
+	// =========================================================
+
 	using Mtx = sead::Matrix34f;
 	using Vec = sead::Vector3f;
 	static_assert(sizeof(nn::g3d::ResBone) == 0x60);
@@ -51,6 +55,10 @@ namespace PlayerRetarget {
 		return out;
 	}
 
+	// =========================================================
+	//                        CONTROLLERS
+	// =========================================================
+
 	// The game's joint controllers, named for its debug lists
 	class Controller : public al::JointControllerBase {
 	public:
@@ -80,6 +88,10 @@ namespace PlayerRetarget {
 		if (!al::isExistJointControllerKeeper(model)) al::JointSpringControllerHolder::tryCreateAndInitJointControllerKeeper(model, "InitJointSpringCtrl");
 		else (new al::JointSpringControllerHolder())->init(model, "InitJointSpringCtrl");
 	}
+
+	// =========================================================
+	//                         RIDE GRIP
+	// =========================================================
 
 	// Scooter and kart mix their L/C/R clips by steering, and a mix of converted arms leaves the fists off the handles: each arm reaches its fist to Mario's spot mixed the same way
 	namespace RideGrip {
@@ -229,6 +241,10 @@ namespace PlayerRetarget {
 		al::registerJointController(model, ctrl);
 	}
 
+	// =========================================================
+	//                        FACE BONES
+	// =========================================================
+
 	// A face on its own bones (FaceBones.byml in the face's archive): its clips only switch Face00..08 on, so each frame the face bones ease to that face's pose and the lids shut as the eye part blinks
 	class FaceController : public Controller {
 	public:
@@ -315,25 +331,21 @@ namespace PlayerRetarget {
 		al::registerJointController(face, c);
 	}
 
-	// Springs on the body's parts (a character's head or face part ships the springs of the skin it holds); each part's silhouette shares its model, so only the parts themselves
-	inline void tryInitPartSprings(al::LiveActor* body) {
-		for (s32 i = 0; i < al::getSubActorNum(body); i++) {
-			al::LiveActor* part = al::getSubActor(body, i);
-			if (part && part->getModelKeeper() && part->getModelKeeper() != body->getModelKeeper()) tryInitSprings(part);
-		}
-	}
+	// =========================================================
+	//                           SETUP
+	// =========================================================
 
-	// The body's and its parts' springs and ride grip; a face part on its own bones blinks with the eye part (parts sharing the body's model, the silhouette, are skipped)
+	// The body's and its parts' springs (a head or face part ships the springs of the skin it holds) and ride grip; a face part on its own bones blinks with the eye part (parts sharing the body's model, the silhouette, are skipped)
 	inline void executeInitPlayer(al::LiveActor* model) {
 		if (!model || !model->getModelKeeper()) return;
 		tryInitSprings(model);
-		tryInitPartSprings(model);
 		tryInitRideGrip(model);
 		al::LiveActor* face = nullptr;
 		al::LiveActor* eye = nullptr;
 		for (s32 i = 0; i < al::getSubActorNum(model); i++) {
 			al::LiveActor* part = al::getSubActor(model, i);
 			if (!part || !part->getModelKeeper() || part->getModelKeeper() == model->getModelKeeper()) continue;
+			tryInitSprings(part);
 			if (al::isExistModelResourceYaml(part, "FaceBones", nullptr)) face = part;
 			else if (al::getJointIndex(part, FaceController::sShut[0]) >= 0) eye = part;
 		}
@@ -352,6 +364,10 @@ namespace PlayerRetarget {
 			Orig(actor, count);
 		}
 	};
+
+	// =========================================================
+	//                           HOOKS
+	// =========================================================
 
 	// The game fits Mario's clips to each body's bone lengths; converted clips already fit their body, so it's skipped
 	struct BodyRetargetHook : public mallow::hook::Trampoline<BodyRetargetHook> {
@@ -432,23 +448,10 @@ namespace PlayerRetarget {
 	inline void Install() {
 		KeeperSizeHook::InstallAtSymbol("_ZN2al25initJointControllerKeeperEPKNS_9LiveActorEi");
 		GroundPoseLegBottomHook::InstallAtSymbol("_ZN28PlayerJointControlGroundPose16calcLegBottomMtxEPN4sead8Matrix34IfEERKNS0_9SafeArrayIS2_Li2EEERKNS4_IiLi2EEE");
-		BodyAnimationArchiveHook::InstallAtOffset(0x4440C0); // the shared body setup (initMarioModelActor, its Demo and Closet versions), where the "PlayerAnimation" archive name is passed on
-		ClipSlot::CategoryHook::InstallAtSymbol("_ZNK2al14ResourceSystem25findCategoryNameFromTableERKN4sead14SafeStringBaseIcEE");
-		ClipSlot::StageHook::InstallAtSymbol("_ZN10StageScene4initERKN2al13SceneInitInfoE");
-		ClipSlot::WorldHook::InstallAtSymbol("_ZN2al24destroyWorldResourceHeapEb");
-		ClipSlot::ReuseHook::InstallAtSymbol("_ZN2al13ArchiveHolder22addNewLoadRequestEntryERKN4sead14SafeStringBaseIcEEPNS1_4HeapEPNS1_10FileDeviceE");
 		BodyRetargetHook::InstallAtSymbol("_ZN2rs31createPlayerSklRetargettingInfoEPN2al9LiveActorERKN4sead7Vector3IfEE");
-		FootPrintArchiveHook::InstallAtSymbol("_ZN2al15FootPrintHolderC2EPNS_9LiveActorEPKcPNS_9HitSensorEPNS_15FootPrintServerE");
-		PackListHook::InstallAtSymbol("_ZN2al24AudioResourceLoadingInfo10createInfoEPKNS_8ResourceE");
-		SoundListHook::InstallAtSymbol("_ZN2al16tryFindAudioInfoINS_10SeUserInfoEEEPKT_PKNS_22AudioInfoListWithPartsIS2_EEPKc");
-		EffectListHook::InstallAtSymbol("_ZN16alEffectFunction17tryFindEffectUserEPKN2al16EffectSystemInfoEPKc");
-		GameSoundsHook::InstallAtSymbol("_ZN2al10SeDataBase33setResourceSpecInfoToResourceInfoEv");
-		NewClipsHook::InstallAtSymbol("_ZN2al20InitResourceDataAnim9tryCreateEPNS_8ResourceES2_");
-		NewTableHook::InstallAtSymbol("_ZNK2al8Resource7getBymlERKN4sead14SafeStringBaseIcEE");
-		TryNewTableHook::InstallAtSymbol("_ZNK2al8Resource10tryGetBymlERKN4sead14SafeStringBaseIcEE");
-		EffectListBuildHook::InstallAtSymbol("_ZN2al14EffectDataBaseC2EPKc");
 		DemoBodyHook::InstallAtSymbol("_ZN14PlayerFunction23initMarioModelActorDemoEPP31PlayerJointControlPartsDynamicsPN2al9LiveActorERKNS3_13ActorInitInfoEPKcSA_PK11PlayerConstPN4sead7Vector3IfEESH_b");
 		ClosetBodyHook::InstallAtSymbol("_ZN14PlayerFunction25initMarioModelActorClosetEPP31PlayerJointControlPartsDynamicsPN2al9LiveActorERKNS3_13ActorInitInfoEPKcSA_PK11PlayerConstPN4sead7Vector3IfEESH_PP30PlayerJointControlFollowMtxPtrPNSE_8Matrix34IfEE");
 		ClosetActionHook::InstallAtSymbol("_ZN21StageSceneStateCloset16startActionMarioEPN2al9LiveActorEPKc");
+		InstallResources();
 	}
 }

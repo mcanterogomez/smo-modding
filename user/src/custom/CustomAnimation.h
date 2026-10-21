@@ -251,18 +251,16 @@ namespace CustomAnimation {
 		}
 	};
 
-	// Swap for new 2d animation archive
+	// Swap for new 2d animation archive: a 2D model drawn for it has its extra frames (MarioDot11); the game opens the model right after, so it's only opened a step earlier
 	struct PlayerAnimation2DArchiveHook : public mallow::hook::Inline<PlayerAnimation2DArchiveHook> {
 		static void Callback(exl::hook::InlineCtx* ctx) {
 			const char* model = (const char*)ctx->X[20];
-			static bool isNew2D = al::isExistFile("ObjectData/MarioNew2D.txt");
-
-			bool isSwap = isNew2D && al::isEqualString(model, "Mario2D");
-			#ifdef ALLOW_POWERUPS
-				static const char* suits[] = {"MarioColorBrawl2D", "MarioColorClassic2D", "MarioColorFire2D", "MarioColorFly2D", "MarioColorIce2D",
-					"MarioColorMetal2D", "MarioColorSuper2D", "MarioDrill2D", "MarioFeather2D", "MarioTanooki2D"};
-				for (const char* suit : suits) isSwap = isSwap || al::isEqualString(model, suit);
-			#endif
+			al::StringTmp<128> path("ObjectData/%s", model), file("%s.bfres", model);
+			const al::Resource* resource = PlayerRetarget::hasFile(path.cstr()) ? al::findOrCreateResource(path, nullptr) : nullptr;
+			const char* data = resource ? (const char*)resource->getFile(file) : nullptr;
+			const char* end = data ? data + resource->getFileSize(file) : nullptr;
+			const char* frame = "MarioDot11";
+			bool isSwap = data && std::search(data, end, frame, frame + std::strlen(frame)) != end;
 			if (isSwap) ctx->X[25] = (u64)"PlayerAnimation2DNew";
 		}
 	};

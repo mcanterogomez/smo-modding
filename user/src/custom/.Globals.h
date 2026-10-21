@@ -125,9 +125,15 @@ inline bool isPadTriggerGalaxySpin(int port) {
 	}
 }
 
+// Mario's double spin and galaxy sfx: Mario, his suits and Luigi
+inline bool isMarioGalaxy(const al::LiveActor* player) {
+	const char* costume = GameDataFunction::getCurrentCostumeTypeName(player);
+	return costume && (al::isStartWithString(costume, "Mario") || al::isStartWithString(costume, "Luigi"));
+}
+
 // Galaxy SFX config
 inline void isGalaxySfx(PlayerActorHakoniwa* player) {
-	if (!isConfig()->galaxySfx) return;
+	if (!isConfig()->galaxySfx || !isMarioGalaxy(player)) return;
 	auto* model = player->mModelHolder->findModelActor("Normal");
 	al::tryEmitEffect(model, "SpinAttack", nullptr);
 	al::tryStartSe(model, "SpinAttack");

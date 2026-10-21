@@ -86,7 +86,7 @@ public:
 
             if (!isSpinning) {
                 if (!isCarrying && (isNearCollectible || isNearTreasure || isNearSwoonedEnemy)) startAttack(player, isNearCollectible ? "RabbitGet" : "Kick", "Punch", isNearCollectible ? 7 : 2, -1);
-                else if (didSpin || isRotatingL || isRotatingR) startAttack(player, (didSpin ? spinDir > 0 : isRotatingL) ? "SpinAttackLeft" : "SpinAttackRight", "DoubleSpin", 0, 41);
+                else if (isMarioGalaxy(player) && (didSpin || isRotatingL || isRotatingR)) startAttack(player, (didSpin ? spinDir > 0 : isRotatingL) ? "SpinAttackLeft" : "SpinAttackRight", "DoubleSpin", 0, 41);
                 else if (player->mInput->isHoldSquat()) startAttack(player, "SpinLow", "GalaxySpin", 0, 12);
                 else if (isCarrying) {
                     startAttack(player, "SpinSeparate", "GalaxySpin", 0, 21);
@@ -185,7 +185,7 @@ public:
             tryEndSubAnim(anim);
 
             if (!isSpinning) {
-                if (didSpin || isRotatingAirL || isRotatingAirR) startAttack(player, (didSpin ? spinDir > 0 : isRotatingAirL) ? "SpinAttackAirLeft" : "SpinAttackAirRight", "DoubleSpin", 0, 41);
+                if (isMarioGalaxy(player) && (didSpin || isRotatingAirL || isRotatingAirR)) startAttack(player, (didSpin ? spinDir > 0 : isRotatingAirL) ? "SpinAttackAirLeft" : "SpinAttackAirRight", "DoubleSpin", 0, 41);
                 else if (isCarrying) {
                     startAttack(player, "SpinSeparate", "GalaxySpin", 0, 21);
                     isGalaxySfx(player); // apply galaxy effects
